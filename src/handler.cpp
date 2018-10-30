@@ -766,11 +766,11 @@ void affect_total(struct char_data * ch)
       }
     }
   }
-  if (AFF_FLAGGED(ch, AFF_WITHDRAWL_FORCE))
+  if (AFF_FLAGGED(ch, AFF_WITHDRAWAL_FORCE))
   {
     GET_MAX_MENTAL(ch) -= 300;
     GET_TARGET_MOD(ch) += 6;
-  } else if (AFF_FLAGGED(ch, AFF_WITHDRAWL))
+  } else if (AFF_FLAGGED(ch, AFF_WITHDRAWAL))
   {
     GET_TARGET_MOD(ch) += 4;
   }
@@ -2060,7 +2060,6 @@ void extract_char(struct char_data * ch)
     ch->char_specials.rigging = NULL;
     PLR_FLAGS(ch).RemoveBit(PLR_REMOTE);
   }
-
   // Clean up playergroup info.
   if (GET_PGROUP_DATA(ch))
     delete GET_PGROUP_DATA(ch);

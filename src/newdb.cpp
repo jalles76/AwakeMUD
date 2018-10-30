@@ -56,36 +56,12 @@ int mysql_wrapper(MYSQL *mysql, const char *query)
 #endif
   
   int result = mysql_query(mysql, query);
-  int errnum = mysql_errno(mysql);
   
-  if (errnum) {
+  if (mysql_errno(mysql)) {
     sprintf(buf, "MYSQLERROR: %s", mysql_error(mysql));
     log(buf);
     sprintf(buf, "Offending query: %s", query);
     log(buf);
-    
-    // Eventual TODO: https://dev.mysql.com/doc/refman/5.7/en/mysql-ping.html -> auto-reconnect feature
-    // Recovery procedures for certain errors.
-    switch (errnum) {
-      case 2006:
-        // 'MySQL server has gone away.'
-        log("The MySQL server connection appears to have dropped. Attempting to establish a new one.");
-        mysql_close(mysql);
-        mysql = mysql_init(NULL);
-        if (!mysql_real_connect(mysql, mysql_host, mysql_user, mysql_password, mysql_db, 0, NULL, 0)) {
-          sprintf(buf, "FATAL ERROR: %s\r\n", mysql_error(mysql));
-          log(buf);
-          log("Suggestion: Make sure your DB is running and that you've specified your connection info in src/mysql_config.cpp.\r\n");
-          
-          // High chance this won't succeed-- the calling function will likely attempt to read
-          //  the results of the query, but the query had no results and will refuse a read.
-          //  This is crash-inducing behavior 99% of the time.
-          shutdown();
-        }
-        break;
-      default:
-        break;
-    }
   }
   return result;
 }
@@ -314,7 +290,7 @@ void do_start(struct char_data * ch)
   GET_COND(ch, THIRST) = 24;
   GET_COND(ch, FULL) = 24;
   GET_COND(ch, DRUNK) = 0;
-  GET_LOADROOM(ch) = NEWBIE_LOADROOM;
+  GET_LOADROOM(ch) = RM_NEWBIE_LOADROOM;
 
   PLR_FLAGS(ch).SetBit(PLR_NEWBIE);
   PRF_FLAGS(ch).SetBits(PRF_AUTOEXIT, PRF_LONGEXITS, ENDBIT);
@@ -823,7 +799,7 @@ bool load_char(const char *name, char_data *ch, bool logon)
   sprintf(buf, "SELECT * FROM pfiles_playergroups WHERE idnum=%ld;", GET_IDNUM(ch));
   mysql_wrapper(mysql, buf);
   res = mysql_use_result(mysql);
-  if ((row = mysql_fetch_row(res))) {
+  if (res && (row = mysql_fetch_row(res))) {
     long pgroup_idnum = atol(row[1]);
     GET_PGROUP_DATA(ch) = new Pgroup_data();
     GET_PGROUP_DATA(ch)->rank = atoi(row[2]);
@@ -860,7 +836,7 @@ bool load_char(const char *name, char_data *ch, bool logon)
   res = mysql_use_result(mysql);
   Pgroup_invitation *pgi;
   time_t expiration;
-  while ((row = mysql_fetch_row(res))) {
+  while (res && (row = mysql_fetch_row(res))) {
     expiration = atol(row[2]);
     if (!(Pgroup_invitation::is_expired(expiration))) {
       pgi = new Pgroup_invitation(atol(row[1]), expiration);
@@ -965,7 +941,7 @@ static bool save_char(char_data *player, DBIndex::vnum_t loadroom)
 
   MYSQL_RES *res;
   MYSQL_ROW row;
-  sprintf(buf, "SELECT * FROM pfiles WHERE idnum=%ld;", GET_IDNUM(player));
+  sprintf(buf, "SELECT idnum FROM pfiles WHERE idnum=%ld;", GET_IDNUM(player));
   if (!mysql_wrapper(mysql, buf)) {
     res = mysql_use_result(mysql);
     row = mysql_fetch_row(res);
@@ -1072,19 +1048,22 @@ static bool save_char(char_data *player, DBIndex::vnum_t loadroom)
                  GET_IDNUM(player));
     mysql_wrapper(mysql, buf);
   }
-  sprintf(buf, "DELETE FROM pfiles_skills WHERE idnum=%ld", GET_IDNUM(player));
-  mysql_wrapper(mysql, buf);
-  strcpy(buf, "INSERT INTO pfiles_skills (idnum, skillnum, rank) VALUES (");
-  for (i = 0; i <= MAX_SKILLS; i++)
-    if (GET_SKILL(player, i)) {
-      if (q)
-        strcat(buf, "), (");
-      sprintf(ENDOF(buf), "%ld, %d, %d", GET_IDNUM(player), i, REAL_SKILL(player, i));
-      q = 1;
-    } 
-  if (q) {
-    strcat(buf, ");");
+  if (GET_SKILL_DIRTY_BIT(player)) {
+    sprintf(buf, "DELETE FROM pfiles_skills WHERE idnum=%ld", GET_IDNUM(player));
     mysql_wrapper(mysql, buf);
+    strcpy(buf, "INSERT INTO pfiles_skills (idnum, skillnum, rank) VALUES (");
+    for (i = 0; i <= MAX_SKILLS; i++)
+      if (GET_SKILL(player, i)) {
+        if (q)
+          strcat(buf, "), (");
+        sprintf(ENDOF(buf), "%ld, %d, %d", GET_IDNUM(player), i, REAL_SKILL(player, i));
+        q = 1;
+      }
+    if (q) {
+      strcat(buf, ");");
+      mysql_wrapper(mysql, buf);
+    }
+    GET_SKILL_DIRTY_BIT(player) = FALSE;
   }
   sprintf(buf, "UPDATE pfiles_drugdata SET Affect=%d, Stage=%d, Duration=%d, Dose=%d WHERE idnum=%ld;", 
                GET_DRUG_AFFECT(player), GET_DRUG_STAGE(player), GET_DRUG_DURATION(player), GET_DRUG_DOSE(player),
@@ -1269,20 +1248,26 @@ static bool save_char(char_data *player, DBIndex::vnum_t loadroom)
   sprintf(buf, "DELETE FROM pfiles_cyberware WHERE idnum=%ld", GET_IDNUM(player));
   mysql_wrapper(mysql, buf);
   int level = 0, posi = 0;
+  q = 0;
   if (player->cyberware) {
+    strcpy(buf, "INSERT INTO pfiles_cyberware (idnum, Vnum, Cost, Restring, Photo, Value0, Value1, Value2, Value3, Value4, Value5, Value6,"\
+           "Value7, Value8, Value9, Value10, Value11, Level, posi) VALUES ");
+    bool first_pass = TRUE;
     for (struct obj_data *obj = player->cyberware; obj;) {
-      strcpy(buf, "INSERT INTO pfiles_cyberware (idnum, Vnum, Cost, Restring, Photo, Value0, Value1, Value2, Value3, Value4, Value5, Value6,"\
-                  "Value7, Value8, Value9, Value10, Value11, Level, posi) VALUES (");
-      sprintf(ENDOF(buf), "%ld, %ld, %d, '%s', '%s'", GET_IDNUM(player), GET_OBJ_VNUM(obj), GET_OBJ_COST(obj), 
+      sprintf(ENDOF(buf), "%s(%ld, %ld, %d, '%s', '%s'", first_pass ? "" : ", ", GET_IDNUM(player), GET_OBJ_VNUM(obj), GET_OBJ_COST(obj),
                           obj->restring ? prepare_quotes(buf3, obj->restring) : "", obj->photo ? prepare_quotes(buf2, obj->photo) : "");
+      first_pass = FALSE;
+      q = 1;
+      
       if (GET_OBJ_VAL(obj, 2) == 4) {
         sprintf(ENDOF(buf), "0, 0, 0, %d, 0, 0, %d, %d, %d, 0, 0, 0", GET_OBJ_VAL(obj, 3), GET_OBJ_VAL(obj, 6), 
                            GET_OBJ_VAL(obj, 7), GET_OBJ_VAL(obj, 8));
       } else
         for (int x = 0; x < NUM_VALUES; x++)
           sprintf(ENDOF(buf), ", %d", GET_OBJ_VAL(obj, x));
-      sprintf(ENDOF(buf), ", %d, %d);", level, posi++);
-      mysql_wrapper(mysql, buf);
+      sprintf(ENDOF(buf), ", %d, %d)", level, posi++);
+      
+      
       if (obj->contains) {
         obj = obj->contains;
         level++;
@@ -1294,6 +1279,12 @@ static bool save_char(char_data *player, DBIndex::vnum_t loadroom)
         }
       if (obj)
         obj = obj->next_content;
+    }
+    
+    if (q) {
+      strcat(buf, ";");
+      mysql_wrapper(mysql, buf);
+      q = 0;
     }
   }
 
@@ -1489,7 +1480,7 @@ char_data *PCIndex::CreateChar(char_data *ch)
 
   if (strlen(GET_CHAR_NAME(ch)) >= MAX_NAME_LENGTH) {
     log("--Fatal error: Could not fit name into player index..\n"
-        "             : Inrease MAX_NAME_LENGTH");
+        "             : Increase MAX_NAME_LENGTH");
     shutdown();
   }
 
@@ -1748,7 +1739,7 @@ bool does_player_exist(char *name)
 bool does_player_exist(long id)
 {
   char buf[MAX_STRING_LENGTH];
-  sprintf(buf, "SELECT idnum FROM pfiles WHERE idnum=%ld;", id);
+  sprintf(buf, "SELECT idnum FROM pfiles WHERE idnum=%ld AND name != 'deleted';", id);
   mysql_wrapper(mysql, buf);
   MYSQL_RES *res = mysql_use_result(mysql);
   MYSQL_ROW row = mysql_fetch_row(res);
@@ -1851,6 +1842,7 @@ void idle_delete()
   MYSQL_ROW row;
   while ((row = mysql_fetch_row(res))) {
 #ifndef IDLEDELETE_DRYRUN
+		// TODO: Wipe out character's vehicles.
     DeleteChar(atol(row[0]));
     deleted++;
 #else

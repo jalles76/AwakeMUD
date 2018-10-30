@@ -128,7 +128,7 @@ ACMD(do_copyover)
       "Someone says \x1B[0;35mOOCly\x1B[0m, \"I'm going to get fired for this.\"\r\n",
       "Yum Yum Copyover Stew, out with the old code, in with the new!\r\n",
       "Deleting player corpses, please wait...\r\n",
-      "\x1B[0;35m[\x1B[0mSerge\x1B[0;35m] \x1B[0;31m(\x1B[0mOOC\x1B[0;31m)\x1B[0m, \"This porn's taking too long to download, needs more bandwith. So the Mud'll be back up in a bit.\"\r\n"
+      "\x1B[0;35m[\x1B[0mSerge\x1B[0;35m] \x1B[0;31m(\x1B[0mOOC\x1B[0;31m)\x1B[0m, \"This porn's taking too long to download, needs more bandwidth. So the Mud'll be back up in a bit.\"\r\n"
     };
 
   fp = fopen (COPYOVER_FILE, "w");
@@ -825,7 +825,7 @@ const char *workshops[] = {
                       "Microtronics",
                       "Cyberware",
                       "Vehicle",
-                      "Weaponary",
+                      "Weaponry",
                       "Medical",
                       "Ammunition"
                     };
@@ -887,7 +887,7 @@ void do_stat_object(struct char_data * ch, struct obj_data * j)
     strcat(buf, "Nowhere");
   else
   {
-    sprintf(ENDOF(buf), "%ld", world[j->in_room].number);
+    sprintf(ENDOF(buf), "%ld (IR %ld)", world[j->in_room].number, j->in_room);
   }
   strcat(buf, ", In object: ");
   strcat(buf, j->in_obj ? j->in_obj->text.name : "None");
@@ -901,6 +901,11 @@ void do_stat_object(struct char_data * ch, struct obj_data * j)
     strcat(buf, GET_CHAR_NAME(j->worn_by) ? GET_CHAR_NAME(j->worn_by): "BROKEN");
   else
     strcat(buf, "Nobody");
+  strcat(buf, ", In vehicle: ");
+  if (j->in_veh)
+    sprintf(ENDOF(buf), "%ld", j->in_veh->veh_number);
+  else
+    strcat(buf, "None");
 
   strcat(buf, "\r\n");
 
@@ -1189,6 +1194,9 @@ void do_stat_character(struct char_data * ch, struct char_data * k)
 
   PRF_FLAGS(k).PrintBits(buf2, MAX_STRING_LENGTH, preference_bits, PRF_MAX);
   sprintf(ENDOF(buf), "PRF: ^g%s^n\r\n", buf2);
+  
+  AFF_FLAGS(k).PrintBits(buf2, MAX_STRING_LENGTH, affected_bits, AFF_MAX);
+  sprintf(ENDOF(buf), "AFF: ^y%s^n\r\n", buf2);
 
   sprintf(ENDOF(buf), "Height: %d cm, Weight: %d kg\r\n", GET_HEIGHT(k), GET_WEIGHT(k));
 
@@ -1618,11 +1626,76 @@ ACMD(do_return)
   }
 }
 
+void perform_wizload_object(struct char_data *ch, int vnum) {
+  int real_num, counter, i;
+  bool found = FALSE;
+  struct obj_data *obj = NULL;
+  
+  assert(ch != NULL);
+  
+  // Precondition: Number cannot be negative.
+  if (vnum < 0) {
+    send_to_char("You must specify a positive number.\r\n", ch);
+    return;
+  }
+  
+  // Precondition: Number must be a vnum for a real object.
+  if ((real_num = real_object(vnum)) < 0) {
+    send_to_char("There is no object with that number.\r\n", ch);
+    return;
+  }
+  
+  /* If you want to disable the ability for your imms to load credsticks, uncomment this block.
+   
+  // Precondition: Object cannot be a credstick.
+  if (obj_proto[real_num].obj_flags.type_flag == ITEM_MONEY) {
+    send_to_char("You can't wizload credsticks.\r\n", ch);
+    return;
+  }
+   
+  */
+  
+  // Precondition: Object must belong to a zone.
+  for (counter = 0; counter <= top_of_zone_table; counter++)
+    if ((vnum >= (zone_table[counter].number * 100)) && (vnum <= (zone_table[counter].top))) {
+      found = TRUE;
+      break;
+    }
+  
+  if (!found) {
+    send_to_char ("Sorry, that number is not part of any zone!\r\n", ch);
+    return;
+  }
+  
+  // Precondition: Staff member must have access to the zone the item is in.
+  if (!access_level(ch, LVL_DEVELOPER)) {
+    for (i = 0; i < 5; i++) {
+      if (zone_table[counter].editor_ids[i] == GET_IDNUM(ch))
+        break;
+    }
+  
+    if ((i >= 5)) {
+      send_to_char("Sorry, you don't have access to edit this zone.\r\n", ch);
+      return;
+    }
+  }
+  
+  obj = read_object(real_num, REAL);
+  obj_to_char(obj, ch);
+  GET_OBJ_TIMER(obj) = 2;
+  obj->obj_flags.extra_flags.SetBit(ITEM_IMMLOAD); // Why the hell do we have immload AND wizload?
+  obj->obj_flags.extra_flags.SetBit(ITEM_WIZLOAD);
+  act("$n makes a strange magical gesture.", TRUE, ch, 0, 0, TO_ROOM);
+  act("$n has created $p!", FALSE, ch, obj, 0, TO_ROOM);
+  act("You create $p.", FALSE, ch, obj, 0, TO_CHAR);
+  sprintf(buf, "%s wizloaded object #%d (%s).",
+          GET_CHAR_NAME(ch), vnum, GET_OBJ_NAME(obj));
+  mudlog(buf, ch, LOG_CHEATLOG, TRUE);
+}
+
 ACMD(do_iload)
 {
-  struct obj_data *obj;
-  int number, r_num, counter, i;
-  bool found = FALSE;
+  int number;
 
   one_argument(argument, buf2);
 
@@ -1640,46 +1713,7 @@ ACMD(do_iload)
     return;
   }
 
-  if ((r_num = real_object(number)) < 0) {
-    send_to_char("There is no object with that number.\r\n", ch);
-    return;
-  }
-
-  if (obj_proto[r_num].obj_flags.type_flag == ITEM_MONEY) {
-    send_to_char("You can't iload credsticks!\r\n", ch);
-    return;
-  }
-
-  for (counter = 0; counter <= top_of_zone_table; counter++)
-    if ((number >= (zone_table[counter].number * 100)) && (number <= (zone_table[counter].top))) {
-      found = TRUE;
-      break;
-    }
-
-  if (!found) {
-    send_to_char ("Sorry, that number is not part of any zone!\r\n", ch);
-    return;
-  }
-
-  for (i = 0; i < 5; i++)
-    if (zone_table[counter].editor_ids[i] == GET_IDNUM(ch))
-      break;
-
-  if ((i >= 5) && (!access_level(ch, LVL_DEVELOPER))) {
-    send_to_char("Sorry, you don't have access to edit this zone.\r\n", ch);
-    return;
-  }
-
-  obj = read_object(r_num, REAL);
-  obj_to_char(obj, ch);
-  GET_OBJ_TIMER(obj) = 2;
-  obj->obj_flags.extra_flags.SetBit(ITEM_IMMLOAD);
-  act("$n makes a strange magical gesture.", TRUE, ch, 0, 0, TO_ROOM);
-  act("$n has created $p!", FALSE, ch, obj, 0, TO_ROOM);
-  act("You create $p.", FALSE, ch, obj, 0, TO_CHAR);
-  sprintf(buf, "%s iloaded object #%d (%s).",
-          GET_CHAR_NAME(ch), number, GET_OBJ_NAME(obj));
-  mudlog(buf, ch, LOG_CHEATLOG, TRUE);
+  perform_wizload_object(ch, number);
 }
 
 ACMD(do_wizload)
@@ -1690,7 +1724,6 @@ ACMD(do_wizload)
     return;
   }
   struct char_data *mob;
-  struct obj_data *obj;
   struct veh_data *veh;
 
   int numb, r_num;
@@ -1731,22 +1764,9 @@ ACMD(do_wizload)
     act("$n has created $N!", FALSE, ch, 0, mob, TO_ROOM);
     act("You create $N.", FALSE, ch, 0, mob, TO_CHAR);
   } else if (is_abbrev(buf, "obj")) {
-    if ((r_num = real_object(numb)) < 0) {
-      send_to_char("There is no object with that number.\r\n", ch);
-      return;
-    }
-    obj = read_object(r_num, REAL);
-    obj->obj_flags.extra_flags.SetBit(ITEM_WIZLOAD);
-    obj_to_char(obj, ch);
-
-    act("$n makes a strange magical gesture.", TRUE, ch, 0, 0, TO_ROOM);
-    act("$n has created $p!", FALSE, ch, obj, 0, TO_ROOM);
-    act("You create $p.", FALSE, ch, obj, 0, TO_CHAR);
-    sprintf(buf, "%s wizloaded object #%d (%s).",
-            GET_CHAR_NAME(ch), numb, obj->text.name);
-    mudlog(buf, ch, LOG_CHEATLOG, TRUE);
+    perform_wizload_object(ch, numb);
   } else
-    send_to_char("That'll have to be either 'obj' or 'mob'.\r\n", ch);
+    send_to_char("That'll have to be either 'obj', 'mob', or 'veh'.\r\n", ch);
 }
 
 ACMD(do_vstat)
@@ -2288,7 +2308,7 @@ ACMD(do_invis)
       send_to_char("You can't go invisible above your own level.\r\n", ch);
     } else if (!access_level(ch, LVL_VICEPRES)
                && level > LVL_BUILDER) {
-      send_to_char("All senators are equal and there is no need for above level 2 invisability.\r\n", ch);
+      send_to_char("All senators are equal and there is no need for above level 2 invisibility.\r\n", ch);
     } else if (level < 1) {
       perform_immort_vis(ch);
     } else {
@@ -2621,9 +2641,9 @@ ACMD(do_wizwho)
         continue;
       if (!IS_SENATOR(tch) || !CAN_SEE(ch, tch))
         continue;
-      if (GET_INVIS_LEV(d->character) > ch->player.level) /* Added by Washu 2-4-02 fixes invis level bug*/
+      if (GET_INVIS_LEV(d->character) > GET_LEVEL(ch)) /* Added by Washu 2-4-02 fixes invis level bug*/
         continue;
-      if (GET_INCOG_LEV(d->character) > ch->player.level)
+      if (GET_INCOG_LEV(d->character) > GET_LEVEL(ch))
         continue;
       if (!PRF_FLAGGED(tch, PRF_AFK))
         sprintf(line, " [^c%6.6s^n]  ^b%-30s^n  Room: [^c%5ld^n] Idle: [^c%4d^n]",
@@ -2914,13 +2934,13 @@ void print_zone_to_buf(char *bufptr, int zone, int detailed)
     sprintf(bufptr, "Zone %d (%d): %s\r\n"
             "Age: %d, Commands: %d, Reset: %d (%d), Top: %d\r\n"
             "Rooms: %d, Mobiles: %d, Objects: %d, Shops: %d, Vehicles: %d\r\n"
-            "Security: %d, Status: %s\r\nJuridiction: %s, Editors: ",
+            "Security: %d, Status: %s\r\nJurisdiction: %s, Editors: ",
             zone_table[zone].number, zone, zone_table[zone].name,
             zone_table[zone].age, zone_table[zone].num_cmds,
             zone_table[zone].lifespan, zone_table[zone].reset_mode,
             zone_table[zone].top, rooms, mobs, objs, shops, vehs,
             zone_table[zone].security,
-            zone_table[zone].connected ? "Connected" : "In Progress", jurid[zone_table[zone].juridiction]);
+            zone_table[zone].connected ? "Connected" : "In Progress", jurid[zone_table[zone].jurisdiction]);
 /* FIXCHE   for (i = 0; i < 5; i++) {
       const char *name = playerDB.GetNameV(zone_table[zone].editor_ids[i]);
 
@@ -3770,7 +3790,7 @@ ACMD(do_set)
     }
 
     RANGE(1, LVL_MAX);
-    vict->player.level = (byte) value;
+    GET_LEVEL(vict) = (byte) value;
     break;
   case 31:
     if ((i = real_room(value)) < 0) {
@@ -3973,7 +3993,7 @@ ACMD(do_logwatch)
   one_argument(argument, buf);
 
   if (!*buf) {
-    sprintf(buf, "You are currently watching the following:\r\n%s%s%s%s%s%s%s%s%s%s",
+    sprintf(buf, "You are currently watching the following:\r\n%s%s%s%s%s%s%s%s%s%s%s",
             (PRF_FLAGGED(ch, PRF_CONNLOG) ? "  ConnLog\r\n" : ""),
             (PRF_FLAGGED(ch, PRF_DEATHLOG) ? "  DeathLog\r\n" : ""),
             (PRF_FLAGGED(ch, PRF_MISCLOG) ? "  MiscLog\r\n" : ""),
@@ -3983,7 +4003,8 @@ ACMD(do_logwatch)
             (PRF_FLAGGED(ch, PRF_CHEATLOG) ? "  CheatLog\r\n" : ""),
             (PRF_FLAGGED(ch, PRF_BANLOG) ? "  BanLog\r\n" : ""),
             (PRF_FLAGGED(ch, PRF_GRIDLOG) ? "  GridLog\r\n" : ""),
-            (PRF_FLAGGED(ch, PRF_WRECKLOG) ? "  WreckLog\r\n" : ""));
+            (PRF_FLAGGED(ch, PRF_WRECKLOG) ? "  WreckLog\r\n" : ""),
+            (PRF_FLAGGED(ch, PRF_PGROUPLOG) ? "  PGroupLog\r\n" : ""));
 
     send_to_char(buf, ch);
     return;
@@ -4017,33 +4038,41 @@ ACMD(do_logwatch)
     if (PRF_FLAGGED(ch, PRF_WIZLOG)) {
       send_to_char("You no longer watch the WizLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_WIZLOG);
-    } else {
+    } else if (access_level(ch, LVL_VICEPRES)) {
       send_to_char("You will now see the WizLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_WIZLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "syslog") && access_level(ch, LVL_ADMIN)) {
     if (PRF_FLAGGED(ch, PRF_SYSLOG)) {
       send_to_char("You no longer watch the SysLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_SYSLOG);
-    } else {
+    } else if (access_level(ch, LVL_ADMIN)) {
       send_to_char("You will now see the SysLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_SYSLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "zonelog") && access_level(ch, LVL_ADMIN)) {
     if (PRF_FLAGGED(ch, PRF_ZONELOG)) {
       send_to_char("You no longer watch the ZoneLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_ZONELOG);
-    } else {
+    } else if (access_level(ch, LVL_ADMIN)) {
       send_to_char("You will now see the ZoneLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_ZONELOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "cheatlog") && access_level(ch, LVL_VICEPRES)) {
     if (PRF_FLAGGED(ch, PRF_CHEATLOG)) {
       send_to_char("You no longer watch the CheatLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_CHEATLOG);
-    } else {
+    } else if (access_level(ch, LVL_VICEPRES)) {
       send_to_char("You will now see the CheatLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_CHEATLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "banlog")) {
     if (PRF_FLAGGED(ch, PRF_BANLOG)) {
@@ -4057,31 +4086,45 @@ ACMD(do_logwatch)
     if (PRF_FLAGGED(ch, PRF_GRIDLOG)) {
       send_to_char("You no longer watch the GridLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_GRIDLOG);
-    } else {
+    } else if (access_level(ch, LVL_FIXER)) {
       send_to_char("You will now see the GridLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_GRIDLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "wrecklog")) {
     if (PRF_FLAGGED(ch, PRF_WRECKLOG)) {
       send_to_char("You no longer watch the WreckLog.\r\n", ch);
       PRF_FLAGS(ch).RemoveBit(PRF_WRECKLOG);
-    } else {
+    } else if (access_level(ch, LVL_FIXER)) {
       send_to_char("You will now see the WreckLog.\r\n", ch);
       PRF_FLAGS(ch).SetBit(PRF_WRECKLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
+    }
+  } else if (is_abbrev(buf, "pgrouplog")) {
+    if (PRF_FLAGGED(ch, PRF_PGROUPLOG)) {
+      send_to_char("You no longer watch the PGroupLog.\r\n", ch);
+      PRF_FLAGS(ch).RemoveBit(PRF_PGROUPLOG);
+    } else if (access_level(ch, LVL_VICEPRES)) {
+      send_to_char("You will now see the PGroupLog.\r\n", ch);
+      PRF_FLAGS(ch).SetBit(PRF_PGROUPLOG);
+    } else {
+      send_to_char("You aren't permitted to view that log at your level.\r\n", ch);
     }
   } else if (is_abbrev(buf, "all")) {
-    if (!PRF_FLAGGED(ch, PRF_GRIDLOG))
-      PRF_FLAGS(ch).SetBit(PRF_CONNLOG);
     if (!PRF_FLAGGED(ch, PRF_CONNLOG))
       PRF_FLAGS(ch).SetBit(PRF_CONNLOG);
+    if (!PRF_FLAGGED(ch, PRF_DEATHLOG))
+      PRF_FLAGS(ch).SetBit(PRF_DEATHLOG);
+    if (!PRF_FLAGGED(ch, PRF_MISCLOG))
+      PRF_FLAGS(ch).SetBit(PRF_MISCLOG);
     if (!PRF_FLAGGED(ch, PRF_BANLOG))
       PRF_FLAGS(ch).SetBit(PRF_BANLOG);
     if (!PRF_FLAGGED(ch, PRF_GRIDLOG) && access_level(ch, LVL_FIXER))
       PRF_FLAGS(ch).SetBit(PRF_GRIDLOG);
     if (!PRF_FLAGGED(ch, PRF_WRECKLOG) && access_level(ch, LVL_FIXER))
       PRF_FLAGS(ch).SetBit(PRF_WRECKLOG);
-    if (!PRF_FLAGGED(ch, PRF_MISCLOG) && access_level(ch, LVL_VICEPRES))
-      PRF_FLAGS(ch).SetBit(PRF_MISCLOG);
     if (!PRF_FLAGGED(ch, PRF_WIZLOG) && access_level(ch, LVL_VICEPRES))
       PRF_FLAGS(ch).SetBit(PRF_WIZLOG);
     if (!PRF_FLAGGED(ch, PRF_SYSLOG) && access_level(ch, LVL_ADMIN))
@@ -4090,10 +4133,13 @@ ACMD(do_logwatch)
       PRF_FLAGS(ch).SetBit(PRF_ZONELOG);
     if (!PRF_FLAGGED(ch, PRF_CHEATLOG) && access_level(ch, LVL_VICEPRES))
       PRF_FLAGS(ch).SetBit(PRF_CHEATLOG);
+    if (!PRF_FLAGGED(ch, PRF_PGROUPLOG) && access_level(ch, LVL_VICEPRES))
+      PRF_FLAGS(ch).SetBit(PRF_PGROUPLOG);
     send_to_char("All available logs have been activated.\r\n", ch);
   } else if (is_abbrev(buf, "none")) {
     PRF_FLAGS(ch).RemoveBits(PRF_CONNLOG, PRF_DEATHLOG, PRF_MISCLOG, PRF_WIZLOG,
-                             PRF_SYSLOG, PRF_ZONELOG, PRF_CHEATLOG, PRF_BANLOG, PRF_GRIDLOG, ENDBIT);
+                             PRF_SYSLOG, PRF_ZONELOG, PRF_CHEATLOG, PRF_BANLOG, PRF_GRIDLOG,
+                             PRF_WRECKLOG, PRF_PGROUPLOG, ENDBIT);
     send_to_char("All logs have been disabled.\r\n", ch);
   } else
     send_to_char("Watch what log?\r\n", ch);
@@ -4249,7 +4295,7 @@ ACMD(do_mlist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: mlist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: mlist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4295,7 +4341,7 @@ ACMD(do_ilist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: ilist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: ilist <beginning number> <ending number>\r\n", ch);
     return;
   }
   first = atoi(buf);
@@ -4343,7 +4389,7 @@ ACMD(do_vlist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: vlist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: vlist <beginning number> <ending number>\r\n", ch);
     return;
   }
   first = atoi(buf);
@@ -4386,7 +4432,7 @@ ACMD(do_qlist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: qlist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: qlist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4432,7 +4478,7 @@ ACMD(do_rlist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: rlist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: rlist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4478,7 +4524,7 @@ ACMD(do_hlist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: hlist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: hlist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4524,7 +4570,7 @@ ACMD(do_iclist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: iclist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: iclist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4570,7 +4616,7 @@ ACMD(do_slist)
   two_arguments(argument, buf, buf2);
 
   if (!*buf || !*buf2) {
-    send_to_char("Usage: slist <begining number> <ending number>\r\n", ch);
+    send_to_char("Usage: slist <beginning number> <ending number>\r\n", ch);
     return;
   }
 
@@ -4685,6 +4731,7 @@ ACMD(do_tail)
   two_arguments(argument, arg, buf);
 
   if ( !*arg ) {
+    send_to_char( "Syntax note: tail <lines into history to read> <logfile>", ch );
     send_to_char( "The following logs are available:\r\n", ch );
     sprintf( buf, "ls -C ../log" );
   } else {
@@ -4695,10 +4742,10 @@ ACMD(do_tail)
       // strcpy( arg, buf );
     }
     
-    // Only allow lower-case letters, periods, and numbers.
+    // Only allow letters, periods, numbers, and dashes.
     int index = 0;
     for (char *ptr = buf; *ptr && index < MAX_STRING_LENGTH; ptr++) {
-      if (!isalnum(*ptr) && *ptr != '.')
+      if (!isalnum(*ptr) && *ptr != '.' && *ptr != '-')
         continue;
       else
         arg[index++] = *ptr;

@@ -100,9 +100,9 @@ ACMD(do_quit)
       ch->in_room = save_room;
       if (!GET_LOADROOM(ch)) {
         if (PLR_FLAGGED(ch, PLR_NEWBIE))
-          GET_LOADROOM(ch) = NEWBIE_LOADROOM;
+          GET_LOADROOM(ch) = RM_NEWBIE_LOADROOM;
         else
-          GET_LOADROOM(ch) = 30700;
+          GET_LOADROOM(ch) = RM_ENTRANCE_TO_DANTES;
       }
       
       // Saving occurs in extract_char.
@@ -233,7 +233,7 @@ ACMD(do_steal)
             obj_to_char(obj, ch);
             send_to_char(ch, "You filch %s from %s!\r\n", GET_OBJ_NAME(obj), GET_NAME(vict));
             if (GET_LEVEL(ch) < LVL_BUILDER)
-              act("$n steals $p from $o's unconcious body.", TRUE, ch, obj, vict, TO_ROOM);
+              act("$n steals $p from $o's unconscious body.", TRUE, ch, obj, vict, TO_ROOM);
           }
         }
       } else
@@ -618,9 +618,9 @@ void do_drug_take(struct char_data *ch, struct obj_data *obj)
     GET_DRUG_DOSE(ch)++;
     if (GET_DRUG_DOSE(ch) > GET_DRUG_TOLERANT(ch, drugval)) {
       GET_DRUG_STAGE(ch) = 0;
-      if (AFF_FLAGS(ch).AreAnySet(AFF_WITHDRAWL, AFF_WITHDRAWL_FORCE, ENDBIT) && GET_DRUG_ADDICT(ch, drugval)) {
+      if (AFF_FLAGS(ch).AreAnySet(AFF_WITHDRAWAL, AFF_WITHDRAWAL_FORCE, ENDBIT) && GET_DRUG_ADDICT(ch, drugval)) {
         GET_DRUG_EDGE(ch, drugval)++;
-        AFF_FLAGS(ch).RemoveBits(AFF_WITHDRAWL, AFF_WITHDRAWL_FORCE, ENDBIT);
+        AFF_FLAGS(ch).RemoveBits(AFF_WITHDRAWAL, AFF_WITHDRAWAL_FORCE, ENDBIT);
       }
       switch (drugval) {
       case DRUG_PSYCHE:
@@ -630,6 +630,7 @@ void do_drug_take(struct char_data *ch, struct obj_data *obj)
         break;
       case DRUG_ZEN:
         GET_DRUG_DURATION(ch) = 25 * srdice();
+        break;
       default:
         GET_DRUG_DURATION(ch) = 0;
         break;
@@ -669,10 +670,10 @@ ACMD(do_use)
     else if (!GET_OBJ_VAL(obj, 4) || belongs_to(ch, obj))
       send_to_char("And why would you need to do that?\r\n", ch);
     else if (!IS_OBJ_STAT(corpse, ITEM_CORPSE))
-      send_to_char("And how, praytell, would that work?\r\n", ch);
+      send_to_char("And how, pray tell, would that work?\r\n", ch);
     else if (GET_OBJ_VAL(obj, 3) || GET_OBJ_VAL(obj, 4) != GET_OBJ_VAL(corpse, 5)) {
       if (GET_OBJ_VAL(obj, 2) == 2) {
-        act("You press $p against its thumb, but the diplay flashes red.",
+        act("You press $p against its thumb, but the display flashes red.",
             FALSE, ch, obj, 0, TO_CHAR);
         act("$n holds $p against $P's thumb.", TRUE, ch, obj, corpse, TO_ROOM);
       } else {
@@ -682,7 +683,7 @@ ACMD(do_use)
       }
     } else {
       if (GET_OBJ_VAL(obj, 2) == 2) {
-        act("You press $p against its thumb, and the diplay flashes green.", FALSE,
+        act("You press $p against its thumb, and the display flashes green.", FALSE,
             ch, obj, 0, TO_CHAR);
         act("$n holds $p against $P's thumb.", TRUE, ch, obj, corpse, TO_ROOM);
       } else {
@@ -968,7 +969,7 @@ ACMD(do_gen_write)
 
 const char *tog_messages[][2] = {
                             {"You should never see this.  Use the \"bug\" command to report!\r\n",
-                             "You are afk.\r\n"},
+                             "You are AFK.\r\n"},
                             {"Autoexits disabled.\r\n",
                              "Autoexits enabled.\r\n"},
                             {"Compact mode off.\r\n",
@@ -1020,7 +1021,13 @@ const char *tog_messages[][2] = {
                             {"You will now see OOC in menus.\r\n",
                              "You will no longer see OOC in menus.\r\n"},
                             {"You will no longer see if people are wielding weapons in room descriptions.\r\n",
-                             "You will now see weapons in room descriptions.\r\n"}
+                             "You will now see weapons in room descriptions.\r\n"},
+                            {"You will no longer display your playergroup affiliation in the wholist.\r\n",
+                             "You will now display your playergroup affiliation in the wholist.\r\n"},
+                            {"You will no longer receive the keepalive pulses from the MUD.\r\n",
+                             "You will now receive keepalive pulses from the MUD.\r\n"},
+                            {"Screenreader mode disabled.\r\n",
+                             "Screenreader mode enabled. Extraneous text and ASCII effects will be reduced.\r\n"}
                           };
 
 ACMD(do_toggle)
@@ -1040,11 +1047,12 @@ ACMD(do_toggle)
       sprintf(buf2, "%-3d", GET_WIMP_LEV(ch));
     if (!IS_SENATOR(ch))
       sprintf(buf,
-              "       Fightgag: %-3s              NoOOC: %-3s               Hired: %-3s\r\n"
-              "        Movegag: %-3s            Compact: %-3s               AutoExits: %-3s\r\n"
+              "       Fightgag: %-3s              NoOOC: %-3s              Hired: %-3s\r\n"
+              "        Movegag: %-3s            Compact: %-3s          AutoExits: %-3s\r\n"
               "     AutoAssist: %-3s            NoShout: %-3s               Echo: %-3s\r\n"
-              "           Pker: %-3s         Long Exits: %-3s               Wimp Level: %-3s\r\n"
-              "        Menugag: %-3s        Long Weapon: %-3s",
+              "           Pker: %-3s         Long Exits: %-3s         Wimp Level: %-3s\r\n"
+              "        Menugag: %-3s        Long Weapon: %-3s        Show PG Tag: %-3s\r\n"
+              "     Keep-Alive: %-3s       Screenreader: %-3s",
 
               ONOFF(PRF_FLAGGED(ch, PRF_FIGHTGAG)),
               ONOFF(PRF_FLAGGED(ch, PRF_NOOOC)),
@@ -1059,17 +1067,22 @@ ACMD(do_toggle)
               ONOFF(PRF_FLAGGED(ch, PRF_LONGEXITS)),
               buf2, 
               ONOFF(PRF_FLAGGED(ch, PRF_MENUGAG)),
-              YESNO(PRF_FLAGGED(ch, PRF_LONGWEAPON)));
+              YESNO(PRF_FLAGGED(ch, PRF_LONGWEAPON)),
+              YESNO(PRF_FLAGGED(ch, PRF_SHOWGROUPTAG)),
+              ONOFF(PRF_FLAGGED(ch, PRF_KEEPALIVE)),
+              YESNO(PRF_FLAGGED(ch, PRF_SCREENREADER)));
     else
       sprintf(buf,
-              "       Fightgag: %-3s              NoOOC: %-3s               Quest: %-3s\r\n"
-              "        Movegag: %-3s            Compact: %-3s               AutoExits: %-3s\r\n"
+              "       Fightgag: %-3s              NoOOC: %-3s              Quest: %-3s\r\n"
+              "        Movegag: %-3s            Compact: %-3s          AutoExits: %-3s\r\n"
               "         NoTell: %-3s            NoShout: %-3s               Echo: %-3s\r\n"
-              "         Newbie: %-3s           Nohassle: %-3s               Menugag: %-3s\r\n"
+              "         Newbie: %-3s           Nohassle: %-3s            Menugag: %-3s\r\n"
               "      Holylight: %-3s          Roomflags: %-3s               Pker: %-3s\r\n"
-              "          Radio: %-3s         Long Exits: %-3s               Wimp Level: %-3s\r\n"
-              "         Pacify: %-3s         AutoAssist: %-3s               Autoinvis: %-3s\r\n"
-              "    Long Weapon: %-3s",
+              "          Radio: %-3s         Long Exits: %-3s         Wimp Level: %-3s\r\n"
+              "         Pacify: %-3s         AutoAssist: %-3s          Autoinvis: %-3s\r\n"
+              "    Long Weapon: %-3s        Show PG Tag: %-3s         Keep-Alive: %-3s\r\n"
+              "   Screenreader: %-3s",
+              
               ONOFF(PRF_FLAGGED(ch, PRF_FIGHTGAG)),
               ONOFF(PRF_FLAGGED(ch, PRF_NOOOC)),
               YESNO(PRF_FLAGGED(ch, PRF_QUEST)),
@@ -1091,7 +1104,10 @@ ACMD(do_toggle)
               ONOFF(PRF_FLAGGED(ch, PRF_ASSIST)),
               ONOFF(PRF_FLAGGED(ch, PRF_AUTOINVIS)),
               ONOFF(PRF_FLAGGED(ch, PRF_PACIFY)),
-              YESNO(PRF_FLAGGED(ch, PRF_LONGWEAPON)));
+              YESNO(PRF_FLAGGED(ch, PRF_LONGWEAPON)),
+              YESNO(PRF_FLAGGED(ch, PRF_SHOWGROUPTAG)),
+              ONOFF(PRF_FLAGGED(ch, PRF_KEEPALIVE)),
+              YESNO(PRF_FLAGGED(ch, PRF_SCREENREADER)));
     send_to_char(buf, ch);
   } else {
     if (is_abbrev(argument, "afk"))
@@ -1195,6 +1211,15 @@ ACMD(do_toggle)
       }
       mode = 24;
       result = 1;
+    } else if (is_abbrev(argument, "showpgtag")) {
+      result = PRF_TOG_CHK(ch, PRF_SHOWGROUPTAG);
+      mode = 27;
+    } else if (is_abbrev(argument, "keepalive")) {
+      result = PRF_TOG_CHK(ch, PRF_KEEPALIVE);
+      mode = 28;
+    } else if (is_abbrev(argument, "screenreader")) {
+      result = PRF_TOG_CHK(ch, PRF_SCREENREADER);
+      mode = 29;
     } else {
       send_to_char("That is not a valid toggle option.\r\n", ch);
       return;
@@ -1564,9 +1589,10 @@ ACMD(do_attach)
       case SKILL_MACHINE_GUNS:
       case SKILL_MISSILE_LAUNCHERS:
       case SKILL_ASSAULT_CANNON:
-        if (GET_OBJ_VAL(item2, 1) < 2)
+        if (GET_OBJ_VAL(item2, 1) < 2) {
           send_to_char("You need a hardpoint or larger to mount this weapon in.\r\n", ch);
           return;
+        }
     }
     veh->usedload += GET_OBJ_WEIGHT(item);
     obj_from_char(item);
@@ -2312,7 +2338,8 @@ void cedit_parse(struct descriptor_data *d, char *arg)
     case '1':
       if (STATE(d) == CON_BCUSTOMIZE) {
         d->edit_mode = CEDIT_DESC;
-        CLEANUP_AND_INITIALIZE_D_STR(d);
+        DELETE_D_STR_IF_EXTANT(d);
+        INITIALIZE_NEW_D_STR(d);
         d->max_str = EXDSCR_LENGTH;
         d->mail_to = 0;
         return;
@@ -2340,7 +2367,8 @@ void cedit_parse(struct descriptor_data *d, char *arg)
         d->edit_mode = CEDIT_VOICE;
       else {
         d->edit_mode = CEDIT_DESC;
-        CLEANUP_AND_INITIALIZE_D_STR(d);
+        DELETE_D_STR_IF_EXTANT(d);
+        INITIALIZE_NEW_D_STR(d);
         d->max_str = EXDSCR_LENGTH;
         d->mail_to = 0;
       }
@@ -2349,7 +2377,8 @@ void cedit_parse(struct descriptor_data *d, char *arg)
     case '4':
       send_to_char("Enter long (active) description (@ on a blank line to end):\r\n", CH);
       d->edit_mode = CEDIT_LONG_DESC;
-      CLEANUP_AND_INITIALIZE_D_STR(d);
+      DELETE_D_STR_IF_EXTANT(d);
+      INITIALIZE_NEW_D_STR(d);
       d->max_str = EXDSCR_LENGTH;
       d->mail_to = 0;
 
@@ -3614,7 +3643,7 @@ ACMD(do_dice)
     sprintf(ENDOF(buf), "against a TN of %d ", tn);
   }
   if (dice <= 0) {
-    send_to_char("You have to roll atleast 1 die.\r\n", ch);
+    send_to_char("You have to roll at least 1 die.\r\n", ch);
   } else if (dice > 30) {
     send_to_char("You can't roll that many dice.\r\n", ch); 
   } else {
@@ -3669,7 +3698,7 @@ ACMD(do_survey)
     case 6:
     case 5:
     case 4:
-      strcat(buf, "There are alot of people about");
+      strcat(buf, "There are a lot of people about");
       break;
     case 3:
     case 2:
@@ -3692,7 +3721,7 @@ ACMD(do_survey)
     case 6:
     case 5:
     case 4:
-      strcat(buf, "here is alot of cover.");
+      strcat(buf, "here is a lot of cover.");
       break;
     case 3:
     case 2:
@@ -3861,7 +3890,8 @@ ACMD(do_tridlog)
   } else if (is_abbrev(arg, "add")) {
     send_to_char("Enter message to be displayed. (Insert Line Breaks With \\r\\n):\r\n", ch);
     STATE(ch->desc) = CON_TRIDEO;
-    CLEANUP_AND_INITIALIZE_D_STR(ch->desc);
+    DELETE_D_STR_IF_EXTANT(ch->desc);
+    INITIALIZE_NEW_D_STR(ch->desc);
     ch->desc->max_str = MAX_MESSAGE_LENGTH;
     ch->desc->mail_to = 0;
   } else if (is_abbrev(arg, "delete")) {

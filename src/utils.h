@@ -426,7 +426,7 @@ extern bool PLR_TOG_CHK(char_data *ch, dword offset);
  * the skills.  Sure love corrupting the p-file! -Flynn */
 #define GET_SKILL(ch, i)        ((ch)->char_specials.saved.skills[i][1] > 0 ? (ch)->char_specials.saved.skills[i][1] : (ch)->char_specials.saved.skills[i][0])
 #define REAL_SKILL(ch, i)       ((ch)->char_specials.saved.skills[i][1] > 0 ? 0 : (ch)->char_specials.saved.skills[i][0])
-#define SET_SKILL(ch, i, pct)   {(ch)->char_specials.saved.skills[i][0] = pct;}
+#define SET_SKILL(ch, i, pct)   {(ch)->char_specials.saved.skills[i][0] = pct; GET_SKILL_DIRTY_BIT((ch)) = TRUE;}
 #define GET_POWER(ch, i)	((ch)->char_specials.saved.powers[i][1] ? \
                                  MIN((ch)->char_specials.saved.powers[i][1], (ch)->char_specials.saved.powers[i][0]) : 0)
 #define GET_POWER_TOTAL(ch, i)	((ch)->char_specials.saved.powers[i][0])
@@ -438,6 +438,8 @@ extern bool PLR_TOG_CHK(char_data *ch, dword offset);
 #define GET_PP(ch)		((ch)->char_specials.saved.powerpoints)
 #define BOOST(ch)               ((ch)->char_specials.saved.boosted)
 #define GET_EQ(ch, i)         ((ch)->equipment[i])
+
+#define GET_SKILL_DIRTY_BIT(ch)  ((ch)->char_specials.saved.dirty)
 
 #define GET_MOB_SPEC(ch)      (IS_MOB(ch) ? (mob_index[(ch->nr)].func) : NULL)
 #define GET_MOB_RNUM(mob)       ((mob)->nr)
@@ -629,21 +631,25 @@ extern bool PLR_TOG_CHK(char_data *ch, dword offset);
 #define DELETE_IF_EXTANT(target) {if ((target)) delete (target); (target) = NULL;}
 
 // Getting tired of dealing with this special snowflake double pointer.
-#define CLEANUP_AND_INITIALIZE_D_STR(d) {                                              \
+#define DELETE_D_STR_IF_EXTANT(d) {                                                    \
   if ((d)) {                                                                           \
     if ((d)->str) {                                                                    \
       DELETE_ARRAY_IF_EXTANT(*((d)->str));                                             \
-      DELETE_AND_NULL((d)->str);                                                 \
     }                                                                                  \
+    DELETE_IF_EXTANT((d)->str)                                                         \
+  }                                                                                    \
+}
+
+#define INITIALIZE_NEW_D_STR(d) {                                                          \
+  if ((d)) {                                                                           \
     (d)->str = new (char *);                                                           \
     if (!(d)->str) {                                                                   \
-      mudlog("SYSERR: Failed to allocate memory for d->str.", NULL, LOG_SYSLOG, TRUE); \
+      mudlog("Malloc failed!", NULL, LOG_SYSLOG, TRUE);                                \
       shutdown();                                                                      \
-    } else {                                                                           \
-      *((d)->str) = NULL;                                                              \
     }                                                                                  \
+    *((d)->str) = NULL;                                                                \
   }                                                                                    \
-}                                                                                      \
+}
 
 /* OS compatibility ******************************************************/
 

@@ -81,9 +81,13 @@ void check_trigger(rnum_t host, struct char_data *ch)
           break;
         }
       }
-      if (real_ic(trig->ic)) {
+      if (real_ic(trig->ic) > 0) {
         struct matrix_icon *ic;
         ic = read_ic(trig->ic, VIRTUAL);
+        if (!ic) {
+          sprintf(buf, "SYSERR: Attempted to process trigger for non-existent IC. Read failure caused on host %ld, trigger step %d, IC %ld.", host, trig->step, trig->ic);
+          mudlog(buf, NULL, LOG_SYSLOG, TRUE);
+        }
         ic->ic.target = PERSONA->idnum;
         for (struct matrix_icon *icon = HOST.icons; icon; icon = icon->next_in_host)
           if (icon->decker) {
@@ -121,7 +125,7 @@ bool tarbaby(struct obj_data *prog, struct char_data *ch, struct matrix_icon *ic
     if (ic->ic.type == 10 && success_test(target, DECKER->mpcp + DECKER->hardening) > 0)
       for (struct obj_data *copy = DECKER->deck->contains; copy; copy = copy->next_content) {
         if (!strcmp(GET_OBJ_NAME(copy), GET_OBJ_NAME(prog))) {
-          send_to_icon(PERSONA, "It destroys all copies in storage memory aswell!\r\n");
+          send_to_icon(PERSONA, "It destroys all copies in storage memory as well!\r\n");
           GET_OBJ_VAL(DECKER->deck, 5) -= GET_OBJ_VAL(copy, 2);
           extract_obj(copy);
           break;
@@ -345,7 +349,7 @@ void position_attack(struct matrix_icon *icon)
       icon->position = success;
       icon->fighting->position = 0;
     } else if (success < 0) {
-      send_to_icon(icon, "You manage to put yoruself in a worse position than before!\r\n");
+      send_to_icon(icon, "You manage to put yourself in a worse position than before!\r\n");
       if (!icon->evasion)
         send_to_icon(icon->fighting, "%s tries to maneuver into a better position but ends up right in your sights!\r\n", CAP(icon->name));
       icon->position = 0;
@@ -449,6 +453,7 @@ void matrix_fight(struct matrix_icon *icon, struct matrix_icon *targ)
         break;
       case 4:
         power += 2;
+        // Explicit fallthrough, in that this is technically correct. IDK why this is a switch though.
       case 3:
       case 2:
         dam = SERIOUS;
@@ -467,6 +472,7 @@ void matrix_fight(struct matrix_icon *icon, struct matrix_icon *targ)
         break;
       case 4:
         power += 2;
+        // Explicit fallthrough.
       case 3:
         dam = DEADLY;
         break;
@@ -637,7 +643,7 @@ void matrix_fight(struct matrix_icon *icon, struct matrix_icon *targ)
     send_to_icon(icon, "Your attack leaves %s reeling.\r\n", targ->name);
     break;
   default:
-    send_to_icon(targ, "%s's attack completly obliterates you!\r\n", CAP(icon->name));
+    send_to_icon(targ, "%s's attack completely obliterates you!\r\n", CAP(icon->name));
     send_to_icon(icon, "You obliterate %s.\r\n", targ->name);
     break;
   }
@@ -1203,7 +1209,7 @@ ACMD(do_logoff)
     }
     send_to_icon(PERSONA, "You gracefully log off from the matrix and return to the real world.\r\n");
   }
-  sprintf(buf, "%s depixilates and vanishes from the host.\r\n", PERSONA->name);
+  sprintf(buf, "%s depixelates and vanishes from the host.\r\n", PERSONA->name);
   send_to_host(PERSONA->in_host, buf, PERSONA, FALSE);
   extract_icon(PERSONA);
   PERSONA = NULL;
@@ -1458,6 +1464,7 @@ ACMD(do_load)
   }
   if (!*argument) {
     send_to_char(ch, "What do you want to %s?\r\n", subcmd == SCMD_UNLOAD ? "unload" : "upload");
+    return;
   }
   skip_spaces(&argument);
   if (subcmd == SCMD_UNLOAD) {
@@ -1593,7 +1600,7 @@ ACMD(do_download)
         }
       } else
         send_to_icon(PERSONA, "The file fails to download.\r\n");
-        return;
+      return;
     }
   }
   send_to_icon(PERSONA, "You can't seem to locate that file on this host.\r\n");

@@ -250,7 +250,7 @@ void taxi_leaves(void)
         close_taxi_door(to, rev_dir[i], j);
         if (world[to].people) {
           if (j >= real_room(FIRST_PORTCAB))
-            sprintf(buf, "The taxi doors slide shut and it pulls off from the kerb.");
+            sprintf(buf, "The taxi doors slide shut and it pulls off from the curb.");
           else sprintf(buf, "The taxi door slams shut as its wheels churn up a cloud of smoke.");
           act(buf, FALSE, world[to].people, 0, 0, TO_ROOM);
           act(buf, FALSE, world[to].people, 0, 0, TO_CHAR);
@@ -368,7 +368,7 @@ ACMD(do_hail)
     if (!world[ch->in_room].dir_option[dir]) {
       open_taxi_door(ch->in_room, dir, cab);
       if (portland)
-      sprintf(buf, "A nice looking red and white cab pulls up smoothly to the kerb, "
+      sprintf(buf, "A nice looking red and white cab pulls up smoothly to the curb, "
               "and its door opens to the %s.", fulldirs[dir]);
       else sprintf(buf, "A beat-up yellow cab screeches to a halt, "
               "and its door opens to the %s.", fulldirs[dir]);
@@ -492,6 +492,10 @@ SPECIAL(taxi)
   skip_spaces(&argument);
 
   if (CMD_IS("say") || CMD_IS("'")) {
+    // Failure condition: If you can't speak, the cabbie can't hear you. TODO: Test this.
+    if (affected_by_spell(ch, SPELL_STEALTH) || world[ch->in_veh ? ch->in_veh->in_room : ch->in_room].silence[0])
+      return FALSE;
+    
     bool found = FALSE;
     if (GET_ACTIVE(driver) == ACT_AWAIT_CMD)
       for (dest = 0; (portland ? *port_destinations[dest].keyword : *destinations[dest].keyword) != '\n'; dest++)
@@ -565,7 +569,7 @@ SPECIAL(taxi)
         close_taxi_door(dest, rev_dir[i], ch->in_room);
         if (world[dest].people) {
           if (portland)
-            sprintf(buf, "The taxi doors slide shut and it pulls off from the kerb.");
+            sprintf(buf, "The taxi doors slide shut and it pulls off from the curb.");
           else sprintf(buf, "The taxi door slams shut as its wheels churn up a cloud of smoke.");
           act(buf, FALSE, world[dest].people, 0, 0, TO_ROOM);
           act(buf, FALSE, world[dest].people, 0, 0, TO_CHAR);
@@ -702,12 +706,19 @@ static void close_elevator_doors(struct room_data *room, int num, int floor)
 
   dir = rev_dir[dir];
 
-  if (world[rnum].dir_option[dir]->keyword)
-    delete [] world[rnum].dir_option[dir]->keyword;
-  if (world[rnum].dir_option[dir]->general_description)
-    delete [] world[rnum].dir_option[dir]->general_description;
-  delete world[rnum].dir_option[dir];
-  world[rnum].dir_option[dir] = NULL;
+  // Recover from the rare case of an elevator having a one-way exit.
+  if (world[rnum].dir_option[dir]) {
+    if (world[rnum].dir_option[dir]->keyword)
+      delete [] world[rnum].dir_option[dir]->keyword;
+    if (world[rnum].dir_option[dir]->general_description)
+      delete [] world[rnum].dir_option[dir]->general_description;
+    delete world[rnum].dir_option[dir];
+    world[rnum].dir_option[dir] = NULL;
+  } else {
+    sprintf(buf, "SYSERR: Elevator %ld had a one-way %s exit to %ld.",
+            world[num].number, dirs[rev_dir[dir]], world[rnum].number);
+    mudlog(buf, NULL, LOG_SYSLOG, TRUE);
+  }
 
   if (world[rnum].people)
   {
@@ -1515,7 +1526,7 @@ void close_lightraildoor(int lightrail, int to, int room, int from)
     delete [] world[room].dir_option[from]->general_description;
   delete world[room].dir_option[from];
   world[room].dir_option[from] = NULL;
-  send_to_room("The lightrail's doors slide shut and a tone eminates around the platform, signaling its departure.\r\n", room);
+  send_to_room("The lightrail's doors slide shut and a tone emanates around the platform, signaling its departure.\r\n", room);
   send_to_room("The lightrail's doors slide shut and a tone signals as it begins moving.\r\n", lightrail);
 }
 

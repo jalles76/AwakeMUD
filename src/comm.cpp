@@ -22,6 +22,7 @@
 #include <new>
 #include <time.h>
 #include <iostream>
+#include <mysql/mysql.h>
 using namespace std;
 
 #if defined(WIN32) && !defined(__CYGWIN__)
@@ -76,6 +77,8 @@ extern int MAX_DESCRIPTORS_AVAILABLE;
 extern struct time_info_data time_info; /* In db.c */
 extern char help[];
 
+extern MYSQL *mysql;
+
 /* local globals */
 struct descriptor_data *descriptor_list = NULL; /* master desc list */
 struct txt_block *bufpool = 0;  /* pool of large output buffers */
@@ -120,7 +123,8 @@ void record_usage(void);
 void make_prompt(struct descriptor_data * point);
 void check_idle_passwords(void);
 void init_descriptor (struct descriptor_data *newd, int desc);
-char *colorize(struct descriptor_data *d, char *str);
+char *colorize(struct descriptor_data *d, char *str, bool skip_check = FALSE);
+void send_keepalives();
 
 /* extern fcnts */
 extern void DBInit();
@@ -170,9 +174,7 @@ void gettimeofday(struct timeval *t, struct timezone *dummy)
  ********************************************************************* */
 
 int main(int argc, char **argv)
-{
-  signal(SIGPIPE, SIG_IGN); // Lets us error-handle sigpipe.
-  
+{  
   int pos = 1;
   char *dir;
   port = DFLT_PORT;
@@ -259,7 +261,7 @@ void copyover_recover()
     
   {
     perror ("copyover_recover:fopen");
-    log ("Copyover file not found. Exitting.\n\r");
+    log ("Copyover file not found. Exiting.\n\r");
     exit (1);
   }
   
@@ -331,7 +333,7 @@ void copyover_recover()
   // Force all player characters to look now that everyone's properly loaded.
   struct char_data *plr = character_list;
   while (plr) {
-    if (!IS_NPC(plr))
+    if (!IS_NPC(plr) && !PRF_FLAGGED(plr, PRF_SCREENREADER))
       look_at_room(plr, 0);
     plr = plr->next;
   }
@@ -741,13 +743,15 @@ void game_loop(int mother_desc)
       ElevatorProcess();
     }
     
-    
+    // Every MUD minute
     if (!(pulse % (SECS_PER_MUD_MINUTE * PASSES_PER_SEC))) {
       update_buildrepair();
       another_minute();
       misc_update();
       matrix_update();
     }
+    
+    // Every 5 MUD minutes
     if (!(pulse % (5 * SECS_PER_MUD_MINUTE * PASSES_PER_SEC))) {
       if (!(pulse % (SECS_PER_MUD_HOUR * PASSES_PER_SEC)))
         process_regeneration(1);
@@ -756,19 +760,11 @@ void game_loop(int mother_desc)
       taxi_leaves();
     }
     
-    if (!(pulse % (24 * SECS_PER_MUD_HOUR * PASSES_PER_SEC)))
-      randomize_shop_prices();
-    
-    if (!(pulse % (60 * PASSES_PER_SEC))) {
-      check_idling();
-      // johnson_update();
-    }
-    
-    if (!(pulse % (70 * SECS_PER_MUD_MINUTE * PASSES_PER_SEC)))
-      House_save_all();
+    // Every 59 MUD minutes
     if (!(pulse % (59 * SECS_PER_MUD_MINUTE * PASSES_PER_SEC)))
       save_vehicles();
     
+    // Every MUD hour
     if (!(pulse % (SECS_PER_MUD_HOUR * PASSES_PER_SEC))) {
       point_update();
       weather_change();
@@ -786,6 +782,37 @@ void game_loop(int mother_desc)
           }
         }
       }
+    }
+    
+    // Every 70 MUD minutes
+    if (!(pulse % (70 * SECS_PER_MUD_MINUTE * PASSES_PER_SEC)))
+      House_save_all();
+    
+    // Every MUD day
+    if (!(pulse % (24 * SECS_PER_MUD_HOUR * PASSES_PER_SEC)))
+      randomize_shop_prices();
+    
+    // Every IRL minute
+    if (!(pulse % (60 * PASSES_PER_SEC))) {
+      check_idling();
+      send_keepalives();
+      // johnson_update();
+    }
+    
+    // Every IRL day
+    if (!(pulse % (60 * PASSES_PER_SEC * 60 * 24))) {
+      /* Check if the MySQL connection is active, and if not, recreate it. */
+#ifdef DEBUG
+      unsigned long oldthread = mysql_thread_id(mysql);
+#endif
+      mysql_ping(mysql);
+#ifdef DEBUG
+      unsigned long newthread = mysql_thread_id(mysql);
+      if (oldthread != newthread) {
+        log("MySQL connection was recreated by ping.");
+      }
+#endif
+      /* End MySQL keepalive ping section. */
     }
     
     tics++;                     /* tics since last checkpoint signal */
@@ -830,7 +857,7 @@ struct timeval timediff(struct timeval * a, struct timeval * b)
       rslt.tv_sec--;
     } else
       rslt.tv_usec = a->tv_usec - b->tv_usec;
-      return rslt;
+    return rslt;
   }
 }
 
@@ -893,6 +920,24 @@ void echo_on(struct descriptor_data *d)
   };
   
   SEND_TO_Q(on_string, d);
+}
+
+// Sends a keepalive pulse to the given descriptor.
+void keepalive(struct descriptor_data *d) {
+  char keepalive[] = {
+    (char) IAC,
+    (char) NOP,
+    (char) 0
+  };
+  
+  SEND_TO_Q(keepalive, d);
+}
+
+// Sends keepalives to everyone who's enabled them.
+void send_keepalives() {
+  for (struct descriptor_data *d = descriptor_list; d; d = d->next)
+    if (d->character && PRF_FLAGGED(d->character, PRF_KEEPALIVE))
+      keepalive(d);
 }
 
 void make_prompt(struct descriptor_data * d)
@@ -1357,7 +1402,7 @@ int new_descriptor(int s)
     /* prepend to list */
     descriptor_list = newd;
     
-    SEND_TO_Q(GREETINGS, newd);
+    SEND_TO_Q(colorize(newd, GREETINGS, TRUE), newd);
     return 0;
   }
   
@@ -1973,16 +2018,16 @@ int is_color (char c)
 
 // parses the color codes and translates the properly--we assume that
 // str is not NULL
-char *colorize(struct descriptor_data *d, char *str)
+char *colorize(struct descriptor_data *d, char *str, bool skip_check)
 {
   // it is possible that this could over flow if only because the color
   // codes take up several characters--however, I certainly am not
   // gonna allocate a new one every time (=
-  static char buffer[MAX_STRING_LENGTH];
+  static char buffer[MAX_STRING_LENGTH]; // TODO: Multiply this by the size of the color codes.
   register char *temp = &buffer[0];
   register const char *color;
   
-  if (d->character)
+  if (skip_check or d->character) // ok but why do we care if they have a character?
   {
     while(*str) {
       if (*str == '^') {
@@ -2519,9 +2564,9 @@ void act(const char *str, int hide_invisible, struct char_data * ch,
     to = ch->in_veh->people;
   else
   {
-    log("SYSERR: no valid target to act()!");
+    mudlog("SYSERR: no valid target to act()!", NULL, LOG_SYSLOG, TRUE);
     sprintf(buf, "Invocation: act('%s', '%d', char_data, obj_data, vict_obj, '%d').", str, hide_invisible, type);
-    log(buf);
+    mudlog(buf, NULL, LOG_SYSLOG, TRUE);
     return;
   }
   

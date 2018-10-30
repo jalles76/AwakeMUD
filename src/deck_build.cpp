@@ -109,6 +109,7 @@ void partbuild_main_menu(struct descriptor_data *d) {
         case PART_RESPONSE:
             if (GET_OBJ_VAL(PART, 2) < 3)
                 GET_OBJ_VAL(PART, 2) = 3;
+            // explicit fallthrough
         case PART_HARDENING:
         case PART_STORAGE:
         case PART_ACTIVE:
@@ -178,6 +179,7 @@ void pbuild_parse(struct descriptor_data *d, const char *arg) {
                 d->edit_mode = DEDIT_RATING;
                 break;
             }
+            // Explicit fallthrough-- we only allow option 4 if the part can accept a rating in the first place.
         default:
             send_to_char(CH, "Invalid Option! Enter Option: ");
             break;
@@ -283,7 +285,8 @@ void dbuild_parse(struct descriptor_data *d, const char *arg) {
         case '2':
             send_to_char(CH, "Enter cyberdeck description:\r\n");
             d->edit_mode = DEDIT_TYPE;
-            CLEANUP_AND_INITIALIZE_D_STR(d);
+            DELETE_D_STR_IF_EXTANT(d);
+            INITIALIZE_NEW_D_STR(d);
             d->max_str = MAX_MESSAGE_LENGTH;
             d->mail_to = 0;
             break;

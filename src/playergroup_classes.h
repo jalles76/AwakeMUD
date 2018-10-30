@@ -10,6 +10,7 @@
 /* Playergroup Class */
 class Playergroup {
   long idnum;
+  unsigned long bank;
   const char *tag;
   const char *name;
   const char *alias;
@@ -29,17 +30,19 @@ public:
   const char *get_name() { return name; }
   const char *get_alias() { return alias; }
   long get_idnum() { return idnum; }
+  unsigned long get_bank() { return bank; }
   
   // Setters
-  void set_founded(bool founded);
   void set_disabled(bool disabled);
-  void set_secret(bool secret);
+  void set_founded(bool founded);
   void set_idnum(long newnum) { idnum = newnum; }
+  void set_secret(bool secret);
   
   // Versions of setters that perform validity checks
   bool set_tag(const char *newtitle, struct char_data *ch);
   bool set_name(const char *newname, struct char_data *ch);
   bool set_alias(const char *newalias, struct char_data *ch);
+  void set_bank(unsigned long amount);
   
   // Versions of setters that do not perform validity checks (avoid using unless you're completely sure)
   void raw_set_tag(const char *newtitle);
@@ -47,12 +50,16 @@ public:
   void raw_set_alias(const char *newalias);
   
   // Checkers
-  bool is_founded() { return settings.IsSet(PGROUP_FOUNDED); }
   bool is_clone() { return settings.IsSet(PGROUP_CLONE); }
+  bool is_disabled() { return settings.IsSet(PGROUP_DISABLED); }
+  bool is_founded() { return settings.IsSet(PGROUP_FOUNDED); }
   bool is_secret() { return settings.IsSet(PGROUP_SECRETSQUIRREL); }
   
   // Misc methods.
   static Playergroup *find_pgroup(long idnum);
+  void audit_log(const char *msg); // Stub for audit logging.
+  void audit_log_vfprintf(const char *format, ...);
+  int sql_count_members();
   
   // DB management.
   bool save_pgroup_to_db();

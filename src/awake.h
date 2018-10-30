@@ -319,25 +319,25 @@ enum {
 
 /* preference flags: used by char_data.player_specials.pref */
 
-#define PRF_PACIFY               0
+#define PRF_PACIFY              0
 #define PRF_COMPACT             1 
-#define PRF_AUTOEXIT         2  /* Display exits in a room       */
-#define PRF_FIGHTGAG         3  /* Gag extra fight messages  */
+#define PRF_AUTOEXIT            2  /* Display exits in a room       */
+#define PRF_FIGHTGAG            3  /* Gag extra fight messages  */
 #define PRF_MOVEGAG             4  /* Gag extra movement messages    */
 #define PRF_DEAF                5  /* Can't hear shouts     */
 #define PRF_NOTELL              6  /* Can't receive tells     */
 #define PRF_NORADIO             7  /* Can't hear radio frequencies     */
-#define PRF_NONEWBIE         8  /* Can't hear newbie channel    */
-#define PRF_NOREPEAT         9  /* No repetition of comm commands  */
-#define PRF_HARDCORE		10
+#define PRF_NONEWBIE            8  /* Can't hear newbie channel    */
+#define PRF_NOREPEAT            9  /* No repetition of comm commands  */
+#define PRF_HARDCORE	        	10
 #define PRF_PKER                11 /* is able to pk/be pked        */
 #define PRF_QUEST               12 /* On quest        */
-#define PRF_AFK              13 /* Afk   */
-#define PRF_NOHASSLE         16 /* Aggr mobs won't attack  */
-#define PRF_ROOMFLAGS        17 /* Can see room flags (ROOM_x) */
-#define PRF_HOLYLIGHT        18 /* Can see in dark   */
+#define PRF_AFK                 13 /* Afk   */
+#define PRF_NOHASSLE            16 /* Aggr mobs won't attack  */
+#define PRF_ROOMFLAGS           17 /* Can see room flags (ROOM_x) */
+#define PRF_HOLYLIGHT           18 /* Can see in dark   */
 #define PRF_CONNLOG             19 /* Views ConnLog      */
-#define PRF_DEATHLOG         20 /* Views DeathLog        */
+#define PRF_DEATHLOG            20 /* Views DeathLog        */
 #define PRF_MISCLOG             21 /* Views MiscLog          */
 #define PRF_WIZLOG              22 /* Views WizLog          */
 #define PRF_SYSLOG              23 /* Views SysLog         */
@@ -345,19 +345,23 @@ enum {
 #define PRF_LONGEXITS           25
 #define PRF_ROLLS               26 /* sees details on rolls        */
 #define PRF_NOOOC               27 /* can't hear ooc channel      */
-#define PRF_AUTOINVIS         28 /* to toggle auto-invis for immortals    */
+#define PRF_AUTOINVIS           28 /* to toggle auto-invis for immortals    */
 #define PRF_CHEATLOG            29 /* Views CheatLog         */
-#define PRF_ASSIST  30 /* auto assist */
+#define PRF_ASSIST              30 /* auto assist */
 #define PRF_BANLOG              31
-#define PRF_NORPE  32
-#define PRF_NOHIRED 33
-#define PRF_GRIDLOG 34
-#define PRF_WRECKLOG 35
-#define PRF_QUESTOR 36
-#define PRF_NEWBIEHELPER	37
-#define PRF_MENUGAG		38
-#define PRF_LONGWEAPON		39
-#define PRF_MAX   		40
+#define PRF_NORPE               32
+#define PRF_NOHIRED             33
+#define PRF_GRIDLOG             34
+#define PRF_WRECKLOG            35
+#define PRF_QUESTOR             36
+#define PRF_NEWBIEHELPER	      37
+#define PRF_MENUGAG		          38
+#define PRF_LONGWEAPON	      	39
+#define PRF_PGROUPLOG           40
+#define PRF_SHOWGROUPTAG        41
+#define PRF_KEEPALIVE           42
+#define PRF_SCREENREADER        43
+#define PRF_MAX   		          44
 
 /* log watch */
 
@@ -370,8 +374,9 @@ enum {
 #define LOG_CHEATLOG       6
 #define LOG_WIZITEMLOG     7
 #define LOG_BANLOG    	   8
-#define LOG_GRIDLOG	   9
-#define LOG_WRECKLOG	   10
+#define LOG_GRIDLOG	       9
+#define LOG_WRECKLOG	     10
+#define LOG_PGROUPLOG      11
 
 /* player conditions */
 
@@ -416,8 +421,8 @@ enum {
 #define AFF_PROGRAM	 	32
 #define AFF_PART_DESIGN		33
 #define AFF_PART_BUILD		34
-#define AFF_WITHDRAWL_FORCE	35
-#define AFF_WITHDRAWL		36
+#define AFF_WITHDRAWAL_FORCE	35
+#define AFF_WITHDRAWAL		36
 #define AFF_BONDING		37
 #define AFF_CONJURE		38
 #define AFF_LODGE		39
@@ -1968,7 +1973,29 @@ enum {
 #define NUM_COMBAT_MODIFIERS      10
 // End new combat modifiers.
 
-#define NEWBIE_LOADROOM 60565 // The Neophyte Hotel.
+// Locations, to remove the magic numbers from the code.
+#define RM_CHARGEN_START_ROOM      60500
+#define RM_NEWBIE_LOADROOM         60565 // The Neophyte Hotel.
+#define RM_NEWBIE_LOBBY            60563
+#define RM_ENTRANCE_TO_DANTES      35500
+#define RM_DANTES_GARAGE           35693 + number(0,4)
+#define RM_DANTES_DESCENT          35502
+#define RM_SEATTLE_DOCWAGON        RM_ENTRANCE_TO_DANTES
+#define RM_PORTLAND_DOCWAGON       RM_ENTRANCE_TO_DANTES
+#define RM_CARIB_DOCWAGON          RM_ENTRANCE_TO_DANTES
+#define RM_OCEAN_DOCWAGON          RM_ENTRANCE_TO_DANTES
+#define RM_SEATTLE_PARKING_GARAGE  RM_DANTES_GARAGE
+#define RM_CARIB_PARKING_GARAGE    RM_DANTES_GARAGE
+#define RM_OCEAN_PARKING_GARAGE    RM_DANTES_GARAGE
+#define RM_PORTLAND_PARKING_GARAGE RM_DANTES_GARAGE
+#define RM_PAINTER_LOT             1
+#define RM_MULTNOMAH_GATE_NORTH    1
+#define RM_MULTNOMAH_GATE_SOUTH    1
+
+// Objects, to remove the magic numbers from the code.
+#define OBJ_NEWBIE_RADIO           60531
+#define OBJ_MULTNOMAH_VISA         1
+#define OBJ_MAP_OF_SEATTLE         2041
 
 /* ban struct */
 struct ban_list_element

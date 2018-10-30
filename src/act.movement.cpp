@@ -196,7 +196,7 @@ int do_simple_move(struct char_data *ch, int dir, int extra, struct char_data *v
         act(buf2, TRUE, ch, 0, tch, TO_VICT);
     for (tveh = world[ch->in_room].vehicles; tveh; tveh = tveh->next_veh)
       for (tch = tveh->people; tch; tch = tch->next_in_veh)
-        if (tveh->cspeed <= SPEED_IDLE || (tveh->cspeed > SPEED_IDLE && success_test(GET_INT(tch), 4)))
+        if (tveh->cspeed <= SPEED_IDLE || success_test(GET_INT(tch), 4))
           act(buf2, TRUE, ch, 0, tch, TO_VICT);
     if (world[ch->in_room].watching)
       for (struct char_data *tch = world[ch->in_room].watching; tch; tch = tch->next_watching)
@@ -235,8 +235,6 @@ int do_simple_move(struct char_data *ch, int dir, int extra, struct char_data *v
     look_at_room(ch, 0);
   if (was_in >= real_room(FIRST_CAB) && was_in <= real_room(LAST_CAB))
     sprintf(buf2, "$n gets out of the taxi.");
-  else if (was_in == real_room(1004))
-    sprintf(buf2, "$n arrives from dennis.");
   else if (vict)
     sprintf(buf2, "$n drags %s in from %s.", GET_NAME(vict), thedirs[rev_dir[dir]]);
   else if (ch->char_specials.arrive)
@@ -283,7 +281,7 @@ int do_simple_move(struct char_data *ch, int dir, int extra, struct char_data *v
         act(buf2, TRUE, ch, 0, tch, TO_VICT);
     for (tveh = world[ch->in_room].vehicles; tveh; tveh = tveh->next_veh)
       for (tch = tveh->people; tch; tch = tch->next_in_veh)
-        if (tveh->cspeed <= SPEED_IDLE || (tveh->cspeed > SPEED_IDLE && success_test(GET_INT(tch), 4)))
+        if (tveh->cspeed <= SPEED_IDLE || success_test(GET_INT(tch), 4))
           act(buf2, TRUE, ch, 0, tch, TO_VICT);
     if (world[ch->in_room].watching)
       for (struct char_data *tch = world[ch->in_room].watching; tch; tch = tch->next_watching)
@@ -306,7 +304,7 @@ int do_simple_move(struct char_data *ch, int dir, int extra, struct char_data *v
   if (ROOM_FLAGGED(ch->in_room, ROOM_DEATH) && !IS_NPC(ch) &&
       !IS_SENATOR(ch))
   {
-    send_to_char("You feel the world slip in to darkness, you better hope a wandering Docwagon finds you.\r\n", ch);
+    send_to_char("You feel the world slip into darkness, you better hope a wandering DocWagon finds you.\r\n", ch);
     death_cry(ch);
     act("$n vanishes into thin air.", FALSE, ch, 0, 0, TO_ROOM);
     death_penalty(ch);
@@ -327,7 +325,7 @@ int do_simple_move(struct char_data *ch, int dir, int extra, struct char_data *v
       stop_fighting(ch);
     log_death_trap(ch);
     char_from_room(ch);
-    char_to_room(ch, real_room(16295));
+    char_to_room(ch, real_room(RM_SEATTLE_DOCWAGON));
     extract_char(ch);
   } else if (ROOM_FLAGGED(ch->in_room, ROOM_FALL) && !IS_ASTRAL(ch) &&
              !IS_SENATOR(ch))
@@ -397,7 +395,7 @@ void perform_fall(struct char_data *ch)
     act("^R$n falls in from above!^n", TRUE, ch, 0, 0, TO_ROOM);
     if (ROOM_FLAGGED(ch->in_room, ROOM_DEATH) && !IS_NPC(ch) &&
         !IS_SENATOR(ch)) {
-      send_to_char("You feel the world slip in to darkness, you better hope a wandering Docwagon finds you.\r\n", ch);
+      send_to_char("You feel the world slip into darkness, you better hope a wandering DocWagon finds you.\r\n", ch);
       death_cry(ch);
       act("$n vanishes into thin air.", FALSE, ch, 0, 0, TO_ROOM);
       death_penalty(ch);
@@ -420,7 +418,7 @@ void perform_fall(struct char_data *ch)
               GET_CHAR_NAME(ch), world[ch->in_room].number);
       mudlog(buf, ch, LOG_DEATHLOG, TRUE);
       char_from_room(ch);
-      char_to_room(ch, real_room(16295));
+      char_to_room(ch, real_room(RM_SEATTLE_DOCWAGON));
 
       extract_char(ch);
       return;
@@ -445,8 +443,8 @@ void perform_fall(struct char_data *ch)
         int feettarg = 5;
         feettarg += (int)((meters - 5) / 4);
         if (success_test(GET_QUI(ch), feettarg)) {
-          act("$e manages to land on $s feet, an hydraulic woosh coming from $s legs!", FALSE, ch, 0, 0, TO_ROOM);
-          send_to_char(ch, "You manage to land on your feet, your hydraulic jacks absorbing some from of the fall!\r\n");
+          act("$e manages to land on $s feet, a hydraulic whoosh coming from $s legs!", FALSE, ch, 0, 0, TO_ROOM);
+          send_to_char(ch, "You manage to land on your feet, your hydraulic jacks absorbing some of the impact!\r\n");
           power -= GET_OBJ_VAL(cyber, 1);
         }
       }
@@ -467,6 +465,7 @@ void move_vehicle(struct char_data *ch, int dir)
   struct veh_data *veh;
   struct veh_follow *v, *nextv;
   extern void crash_test(struct char_data *);
+  char empty_argument = '\0';
 
   RIG_VEH(ch, veh);
   if (!veh || veh->damage >= 10)
@@ -481,22 +480,23 @@ void move_vehicle(struct char_data *ch, int dir)
     send_to_char("You might want to speed up a little.\r\n", ch);
     return;
   }
-  if (!EXIT(veh, dir) ||
- EXIT(veh, dir)->to_room == NOWHERE ||
-      (!ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_ROAD) && 
-!ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_GARAGE) && 
-(veh->type != VEH_DRONE && veh->type != VEH_BIKE)) ||
-      IS_SET(EXIT(veh, dir)->exit_info, EX_CLOSED) || 
-(veh->type == VEH_BIKE && ROOM_FLAGGED(EXIT(veh, dir)->to_room,  ROOM_NOBIKE)) ||
- ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_DEATH) ||
- ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_FALL))
+  if (!EXIT(veh, dir)
+      || EXIT(veh, dir)->to_room == NOWHERE
+      || (!ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_ROAD)
+          && !ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_GARAGE)
+          && (veh->type != VEH_DRONE && veh->type != VEH_BIKE))
+      || IS_SET(EXIT(veh, dir)->exit_info, EX_CLOSED)
+      || (veh->type == VEH_BIKE && ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_NOBIKE))
+      || ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_DEATH)
+      || ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_FALL))
   {
     send_to_char("You cannot go that way...\r\n", ch);
     return;
   }
-  char empty_argument = '\0';
+  
   if (special(ch, convert_dir[dir], &empty_argument))
     return;
+  
   if (ROOM_FLAGGED(EXIT(veh, dir)->to_room, ROOM_HOUSE) && !House_can_enter(ch, world[EXIT(veh, dir)->to_room].number)) {
     send_to_char("You can't use other people's garages without permission.\r\n", ch);
     return;
@@ -504,16 +504,21 @@ void move_vehicle(struct char_data *ch, int dir)
 
   sprintf(buf2, "%s %s from %s.", GET_VEH_NAME(veh), veh->arrive, thedirs[rev_dir[dir]]);
   sprintf(buf1, "%s %s to %s.", GET_VEH_NAME(veh), veh->leave, thedirs[dir]);
+  
   if (world[veh->in_room].people)
   {
     act(buf1, FALSE, world[veh->in_room].people, 0, 0, TO_ROOM);
     act(buf1, FALSE, world[veh->in_room].people, 0, 0, TO_CHAR);
   }
+  
   if (world[veh->in_room].watching)
     for (struct char_data *tch = world[veh->in_room].watching; tch; tch = tch->next_watching)
       act(buf2, FALSE, ch, 0, 0, TO_CHAR);
-  for (int r = 1; r >= 0; r--)
-    veh->lastin[r+1] = veh->lastin[r];
+  // for (int r = 1; r >= 0; r--)        <-- Why.
+  //  veh->lastin[r+1] = veh->lastin[r];
+  veh->lastin[2] = veh->lastin[1];
+  veh->lastin[1] = veh->lastin[0];
+  
   was_in = EXIT(veh, dir)->to_room;
   veh_from_room(veh);
   veh_to_room(veh, was_in);
@@ -639,7 +644,7 @@ int perform_move(struct char_data *ch, int dir, int extra, struct char_data *vic
       send_to_char("You start moving away for a clever escape.\r\n", ch);
     } else {
       act("$n attempts a retreat, but fails.", TRUE, ch, 0, 0, TO_ROOM);
-      send_to_char("PANIC!  You couldn't escape!\r\n", ch);
+      send_to_char("PANIC! You couldn't escape!\r\n", ch);
       return 0;
     }
   }
@@ -1073,7 +1078,7 @@ void enter_veh(struct char_data *ch, struct veh_data *found_veh, const char *arg
     send_to_char(ch, "There is no room in the %s of that vehicle.\r\n", front ? "front" : "rear");
   else {
     if (inveh && ch->vfront) {
-      send_to_char("You have to be in the back to get into a that.\r\n", ch);
+      send_to_char("You have to be in the back to get into that.\r\n", ch);
       return;
     }
     door = ch->in_room;
@@ -1313,7 +1318,7 @@ ACMD(do_leave)
             perform_move(ch, door, CHECK_SPECIAL | LEADER, NULL);
             return;
           }
-    send_to_char("I see no obvious exits to the outside.\r\n", ch);
+    send_to_char("You see no obvious exits to the outside.\r\n", ch);
   }
 }
 

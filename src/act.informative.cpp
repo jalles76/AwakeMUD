@@ -192,7 +192,7 @@ void show_obj_to_char(struct obj_data * object, struct char_data * ch, int mode)
     if (GET_OBJ_VNUM(object) == 108 && !GET_OBJ_TIMER(object))
       sprintf(ENDOF(buf), " (Uncooked)");
     if (GET_OBJ_TYPE(object) == ITEM_FOCUS && GET_OBJ_VAL(object, 9) == GET_IDNUM(ch))
-      sprintf(ENDOF(buf), " ^Y(Gaes)^n");
+      sprintf(ENDOF(buf), " ^Y(Geas)^n");
   } else if (GET_OBJ_NAME(object) && ((mode == 2) || (mode == 3) || (mode == 4) || (mode == 7)))
     strcpy(buf, GET_OBJ_NAME(object));
   else if (mode == 5)
@@ -217,7 +217,7 @@ void show_obj_to_char(struct obj_data * object, struct char_data * ch, int mode)
       if (GET_OBJ_VAL(object, 4))
         strcat(buf, " ^m(Activated Focus)^n");
       if (GET_OBJ_VAL(object, 9) == GET_IDNUM(ch))
-        strcat(buf, " ^Y(Gaes)^n");
+        strcat(buf, " ^Y(Geas)^n");
     }
   }
   if (mode != 3)
@@ -626,6 +626,7 @@ void look_at_char(struct char_data * i, struct char_data * ch)
       case CYB_CHIPJACK:
         if (GET_EQ(i, WEAR_HEAD))
           continue;
+        // Explicit fallthrough.
       case CYB_DERMALPLATING:
       case CYB_BALANCETAIL:
         sprintf(ENDOF(buf2), "%s\r\n", cyber_types[GET_OBJ_VAL(tmp_obj, 0)]);
@@ -638,6 +639,7 @@ void look_at_char(struct char_data * i, struct char_data * ch)
           sprintf(ENDOF(buf2), "Optical Magnification\r\n");
         if (IS_SET(GET_OBJ_VAL(tmp_obj, 3), EYE_COSMETIC))
           sprintf(ENDOF(buf2), "%s\r\n", GET_OBJ_NAME(tmp_obj));
+        break;
       default:
         found = TRUE;
         sprintf(ENDOF(buf), "%s\r\n", GET_OBJ_NAME(tmp_obj));
@@ -2217,44 +2219,96 @@ ACMD(do_weather)
 // argument and will send only words that fall under that letter
 ACMD(do_index)
 {
-  return;/*
-          char *temp = argument;
-          
-          skip_spaces(&temp);
-          
-          if (!*temp) {
-          Help.ListIndex(ch, NULL);
-          return;
-          }
-          
-          char letter = *temp;
-          if (!isalpha(letter)) {
-          send_to_char("Only letters can be sent to the index command.\r\n", ch);
-          return;
-          }
-          
-          letter = tolower(letter);
-          Help.ListIndex(ch, &letter);
-          */
+  char *temp = argument;
+  char query[MAX_STRING_LENGTH];
+  MYSQL_RES *res;
+  MYSQL_ROW row;
+  
+  skip_spaces(&temp);
+  
+  if (!*temp) {
+    sprintf(query, "SELECT name FROM help_topic ORDER BY name ASC");
+  } else {
+    char letter = *temp;
+    if (!isalpha(letter)) {
+      send_to_char("Only letters can be sent to the index command.\r\n", ch);
+      return;
+    }
+    
+    letter = tolower(letter);
+    
+    // No prepare_quotes since this is guaranteed to be a single alphanumeric character.
+    sprintf(query, "SELECT name FROM help_topic WHERE name LIKE '%c%%'", letter);
+  }
+  
+  // Execute the query and check for errors.
+  if (mysql_wrapper(mysql, query)) {
+    send_to_char("Apologies, but it seems the help system is currently offline.\r\n", ch);
+    mudlog("WARNING: Failed to return all help topics with 'index' command.", ch, LOG_SYSLOG, TRUE);
+    return;
+  }
+  
+  // Build the index and send it to the character.
+  send_to_char("The following help topics are available:\r\n", ch);
+  res = mysql_store_result(mysql);
+  while ((row = mysql_fetch_row(res))) {
+    send_to_char(ch, " %s\r\n", row[0]);
+  }
+  
+  send_to_char("You can see more about these with HELP <topic>.\r\n", ch);
+  
+  // Clean up.
+  mysql_free_result(res);
 }
 
 void display_help(char *help, const char *arg) {
   char query[MAX_STRING_LENGTH];
   MYSQL_RES *res;
   MYSQL_ROW row;
-  sprintf(query, "SELECT * FROM help_topic WHERE name LIKE '%%%s%%' ORDER BY name ASC", prepare_quotes(buf, arg));
+  *help = '\0';
+  
+  // Buf now holds the quoted version of arg.
+  prepare_quotes(buf, arg);
+  
+  // First strategy: Look for an exact match.
+  sprintf(query, "SELECT * FROM help_topic WHERE name='%s'", buf);
   if (mysql_wrapper(mysql, query)) {
+    // We got a SQL error-- bail.
+    sprintf(help, "The help system is temporarily unavailable.\r\n");
+    mudlog("WARNING: Failed to return help topic. See server log for MYSQL error.", NULL, LOG_SYSLOG, TRUE);
+    return;
+  } else {
+    res = mysql_store_result(mysql);
+    if ((row = mysql_fetch_row(res))) {
+      // Found it-- send it back and have done with it.
+      sprintf(help, "^W%s^n\r\n\r\n%s\r\n", row[0], row[1]);
+      mysql_free_result(res);
+      return;
+    } else {
+      // Failed to find a match-- clean up and continue.
+      mysql_free_result(res);
+    }
+  }
+  
+  // Second strategy: Search for possible like-matches.
+  sprintf(query, "SELECT * FROM help_topic WHERE name LIKE '%%%s%%' ORDER BY name ASC", buf);
+  if (mysql_wrapper(mysql, query)) {
+    // If we don't find it here either, we know the file doesn't exist-- failure condition.
     sprintf(help, "No such help file exists.\r\n");
     return;
   }
   res = mysql_store_result(mysql);
   int x = mysql_num_rows(res);
-  *help='\0';
-  if (x < 1)
+  
+  // If we have no rows, fail.
+  if (x < 1) {
     sprintf(help, "No such help file exists.\r\n");
+  }
+  
+  // If we have too many rows, try to refine the search to just files starting with the search string.
   else if (x > 5) {
     mysql_free_result(res);
-    sprintf(query, "SELECT * FROM help_topic WHERE name LIKE '%s%%' ORDER BY name ASC", prepare_quotes(buf, arg));
+    sprintf(query, "SELECT * FROM help_topic WHERE name LIKE '%s%%' ORDER BY name ASC", buf);
     if (mysql_wrapper(mysql, query)) {
       sprintf(help, "%d articles returned, please narrow your search.aa\r\n", x);
       return;
@@ -2265,8 +2319,11 @@ void display_help(char *help, const char *arg) {
     if (y == 1)
       sprintf(ENDOF(help), "^W%s^n\r\n\r\n%s\r\n", row[0], row[1]);
     else sprintf(help, "%d articles returned, please narrow your search.\r\n", x);
-  } else while ((row = mysql_fetch_row(res))) {
-    sprintf(ENDOF(help), "^W%s^n\r\n\r\n%s\r\n", row[0], row[1]);
+  } else {
+    while ((row = mysql_fetch_row(res))) {
+      sprintf(ENDOF(help), "^W%s^n\r\n\r\n%s\r\n", row[0], row[1]);
+    }
+    return;
   }
   mysql_free_result(res);
 }
@@ -2430,7 +2487,7 @@ ACMD(do_who)
         continue;
       if (newbie && !PLR_FLAGGED(tch, PLR_NEWBIE))
         continue;
-      if (GET_INCOG_LEV(tch) > ch->player.level)
+      if (GET_INCOG_LEV(tch) > GET_LEVEL(ch))
         continue;
       num_can_see++;
       
@@ -2468,10 +2525,31 @@ ACMD(do_who)
           sprintf(buf1, "^L");
           break;
       }
-      sprintf(buf2, "%10s :^N %s%s%s %s ^n", (GET_WHOTITLE(tch) ? GET_WHOTITLE(tch) : ""),
-              (GET_PRETITLE(tch) ? GET_PRETITLE(tch) : ""), (GET_PRETITLE(tch) &&
-                                                             strlen(GET_PRETITLE(tch)) ? " " : ""), GET_CHAR_NAME(tch), GET_TITLE(tch));
+      if (PRF_FLAGGED(tch, PRF_SHOWGROUPTAG) && GET_PGROUP_DATA(tch) && GET_PGROUP(tch)) {
+        sprintf(buf2, "%10s :^N %s%s^N%s%s%s %s^n",
+                (GET_WHOTITLE(tch) ? GET_WHOTITLE(tch) : ""),
+                (GET_PGROUP(tch)->get_tag()),
+                (strlen(GET_PGROUP(tch)->get_tag()) ? " " : ""),
+                (GET_PRETITLE(tch) ? GET_PRETITLE(tch) : ""),
+                (GET_PRETITLE(tch) && strlen(GET_PRETITLE(tch)) ? " " : ""),
+                GET_CHAR_NAME(tch),
+                GET_TITLE(tch));
+      } else {
+        sprintf(buf2, "%10s :^N %s%s%s %s^n",
+                (GET_WHOTITLE(tch) ? GET_WHOTITLE(tch) : ""),
+                (GET_PRETITLE(tch) ? GET_PRETITLE(tch) : ""),
+                (GET_PRETITLE(tch) && strlen(GET_PRETITLE(tch)) ? " " : ""),
+                GET_CHAR_NAME(tch),
+                GET_TITLE(tch));
+      }
       strcat(buf1, buf2);
+      
+      if ((GET_PGROUP_DATA(tch) && GET_PGROUP(tch) && !(GET_PGROUP(tch)->is_secret()))
+          && (GET_PGROUP_DATA(ch) && GET_PGROUP(ch))
+          && GET_PGROUP(ch) == GET_PGROUP(tch)) {
+        sprintf(buf2, " ^G(^g%s^G)^n", GET_PGROUP(tch)->get_alias());
+        strcat(buf1, buf2);
+      }
       
       if (PRF_FLAGGED(tch, PRF_AFK))
         strcat(buf1, " (AFK)");

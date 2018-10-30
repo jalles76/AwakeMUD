@@ -75,7 +75,8 @@ void spedit_parse(struct descriptor_data *d, const char *arg)
     case '2':
       send_to_char(CH, "Enter spell design description:\r\n");
       d->edit_mode = SPEDIT_DESC;
-      CLEANUP_AND_INITIALIZE_D_STR(d);
+      DELETE_D_STR_IF_EXTANT(d);
+      INITIALIZE_NEW_D_STR(d);
       d->max_str = MAX_MESSAGE_LENGTH;
       d->mail_to = 0;
       break;
@@ -112,6 +113,7 @@ void spedit_parse(struct descriptor_data *d, const char *arg)
         d->edit_mode = SPEDIT_ATTR;
         break;
        }
+      // Explicit fallthrough-- you can only select an attribute for attribute-linked spells.
     default:
       send_to_char(CH, "Invalid option!\r\n");
       break;
@@ -206,7 +208,7 @@ void spell_design(struct char_data *ch, struct obj_data *formula)
       target = 2;
     }
     if (skill < GET_OBJ_VAL(formula, 0)) {
-      send_to_char("You don't have the neccesary skills to design this spell.\r\n", ch);
+      send_to_char("You don't have the necessary skills to design this spell.\r\n", ch);
       return;
     }
     int drain = spells[GET_OBJ_VAL(formula, 1)].draindamage;

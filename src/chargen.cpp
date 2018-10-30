@@ -136,7 +136,7 @@ void set_attributes(struct char_data *ch, int magic)
     GET_REAL_BOD(ch) += 5;
     GET_REAL_STR(ch) += 6;
     GET_ATT_POINTS(ch) -= 11;
-    send_to_char("You spend 11 attribute points to raise your attributes to their mininums.\r\n", ch);
+    send_to_char("You spend 11 attribute points to raise your attributes to their minimums.\r\n", ch);
     break;
   case RACE_KOBOROKURU:
     GET_REAL_BOD(ch)++;
@@ -692,7 +692,9 @@ void points_menu(struct descriptor_data *d)
 void create_parse(struct descriptor_data *d, const char *arg)
 {
   int i = MIN(120, atoi(arg)), ok;
-  long shirts[5] = { 38072, 16218, 1024, 28462, 22680 }, pants[5] = { 1023, 39828, 17954, 38009, 22683 };
+  long shirts[5] = { 70000, 70001, 70002, 70003, 70004 };
+  long pants[5] = { 70005, 70006, 70007, 70008, 70009 };
+  long shoes[5] = { 70010, 70011, 70012, 70013, 70014};
 
   switch (d->ccr.mode)
   {
@@ -935,10 +937,22 @@ void create_parse(struct descriptor_data *d, const char *arg)
       d->ccr.pr[2] = PR_RACE;
     else if (GET_RACE(d->character) == RACE_DRYAD)
       d->ccr.pr[1] = PR_RACE;
-    if (real_object(2041) > -1)
-      obj_to_char(read_object(2041, VIRTUAL), d->character);
+    if (real_object(OBJ_MAP_OF_SEATTLE) > -1)
+      obj_to_char(read_object(OBJ_MAP_OF_SEATTLE, VIRTUAL), d->character);
     GET_EQ(d->character, WEAR_BODY) = read_object(shirts[number(0, 4)], VIRTUAL);
     GET_EQ(d->character, WEAR_LEGS) = read_object(pants[number(0, 4)], VIRTUAL);
+    GET_EQ(d->character, WEAR_FEET) = read_object(shoes[number(0, 4)], VIRTUAL);
+    // Check to see if the radio exists (real_object() returns -1 if it can't find an object with this vnum).
+    if (real_object(60531) > -1) {
+      // Read the radio into a temporary object pointer so we can reference it.
+      struct obj_data *radio = read_object(60531, VIRTUAL);
+        
+      // Set the channel to 8 MHz.
+      GET_OBJ_VAL(radio, 0) = 8;
+        
+      // Give the radio to the character via the radio pointer.
+      obj_to_char(radio, d->character);
+    }
     ccr_type_menu(d);
     break;
   case CCR_TOTEM:

@@ -192,10 +192,12 @@ bool shop_receive(struct char_data *ch, struct char_data *keeper, char *arg, int
         for (struct obj_data *bio = ch->bioware; bio; bio = bio->next_content)
           if (!biocyber_compatibility(obj, bio, ch))
              return FALSE;
+        break;
       case ITEM_BIOWARE:
         for (struct obj_data *cyber = ch->cyberware; cyber; cyber = cyber->next_content)
           if (!biocyber_compatibility(obj, cyber, ch))
              return FALSE;
+        break;
     }
     if (GET_OBJ_TYPE(obj) == ITEM_CYBERWARE) {
       if (ch->real_abils.ess + ch->real_abils.esshole < (GET_TOTEM(ch) == TOTEM_EAGLE ?
@@ -402,9 +404,17 @@ void shop_buy(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t 
   }
   if (!(sell = find_obj_shop(arg, shop_nr, &obj)))
   {
-    sprintf(buf, "%s %s", GET_CHAR_NAME(ch), shop_table[shop_nr].no_such_itemk);
-    do_say(keeper, buf, cmd_say, SCMD_SAYTO);
-    return;
+    if (atoi(arg) > 0) {
+      // Adapt for the player probably meaning an item number instead of an item with a numeric keyword.
+      char oopsbuf[strlen(arg) + 2];
+      sprintf(oopsbuf, "#%s", arg);
+      sell = find_obj_shop(oopsbuf, shop_nr, &obj);
+    }
+    if (!sell) {
+      sprintf(buf, "%s %s", GET_CHAR_NAME(ch), shop_table[shop_nr].no_such_itemk);
+      do_say(keeper, buf, cmd_say, SCMD_SAYTO);
+      return;
+    }
   }
   one_argument(arg, buf);
   if (!str_cmp(buf, "cash"))
@@ -476,8 +486,12 @@ void shop_buy(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t 
       sell->lastidnum[0] = GET_IDNUM(ch);
     } else {
       float totaltime = ((GET_OBJ_AVAILDAY(obj) * buynum) / success) + (2 * GET_AVAIL_OFFSET(ch));
-      sprintf(buf, "%s That will take about %d %s to come in.", GET_CHAR_NAME(ch),
-              totaltime < 1 ? (int)(24 * totaltime) : (int)totaltime, totaltime < 1 ? "hours" : (totaltime == 1 ? "day" : "days"));
+      if (totaltime < 1) {
+        int hours = (int)(24 * totaltime);
+        sprintf(buf, "%s That will take about %d %s to come in.", GET_CHAR_NAME(ch), hours, hours == 1 ? "hour" : "hours");
+      } else {
+        sprintf(buf, "%s That will take about %d %s to come in.", GET_CHAR_NAME(ch), (int) totaltime, totaltime == 1 ? "day" : "days");
+      }
       do_say(keeper, buf, cmd_say, SCMD_SAYTO);
       struct shop_order_data *order = shop_table[shop_nr].order;
       for (; order; order = order->next)
@@ -748,11 +762,26 @@ void shop_info(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t
     return;
   struct obj_data *obj;
   skip_spaces(&arg);
+  
+  if (!*arg) {
+    send_to_char(ch, "Syntax: INFO <item>\r\n");
+    return;
+  }
+  
   if (!find_obj_shop(arg, shop_nr, &obj))
   {
-    sprintf(buf, "%s I don't have that item.", GET_CHAR_NAME(ch));
-    do_say(keeper, buf, cmd_say, SCMD_SAYTO);
-    return;
+    bool successful = FALSE;
+    if (atoi(arg) > 0) {
+      // Adapt for the player probably meaning an item number instead of an item with a numeric keyword.
+      char oopsbuf[strlen(arg) + 2];
+      sprintf(oopsbuf, "#%s", arg);
+      successful = (find_obj_shop(oopsbuf, shop_nr, &obj) != NULL);
+    }
+    if (!successful) {
+      sprintf(buf, "%s I don't have that item.", GET_CHAR_NAME(ch));
+      do_say(keeper, buf, cmd_say, SCMD_SAYTO);
+      return;
+    }
   }
   sprintf(buf, "%s %s is", GET_CHAR_NAME(ch), CAP(obj->text.name));
   switch (GET_OBJ_TYPE(obj))
@@ -818,7 +847,7 @@ void shop_info(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t
     else if (GET_OBJ_VAL(obj, 4) > 3 && GET_OBJ_VAL(obj, 4) < 6)
       strcat(buf, " that can carry a bit of gear");
     else if (GET_OBJ_VAL(obj, 4) >= 6)
-      strcat(buf, " that can carry alot of gear");
+      strcat(buf, " that can carry a lot of gear");
     if (GET_OBJ_VAL(obj, 7) < -2)
       strcat(buf, ". It is also very bulky.");
     else if (GET_OBJ_VAL(obj, 7) < 1)
@@ -882,7 +911,7 @@ void shop_info(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t
     strcat(buf, " portion of food.");
     break;
   case ITEM_DOCWAGON:
-    strcat(buf, " a docwagon contract, it will call them out when your vital signs drop.");
+    strcat(buf, " a DocWagon contract, it will call them out when your vital signs drop.");
     break;
   case ITEM_CONTAINER:
     if (GET_OBJ_VAL(obj, 0) < 5)
@@ -1065,8 +1094,10 @@ void shop_rec(char *arg, struct char_data *ch, struct char_data *keeper, vnum_t 
     return;
   char buf[MAX_STRING_LENGTH];
   int number = atoi(arg);
-  if (number == 0)
-    number = 1;
+	if (number == 0) {
+		send_to_char(ch, "Unrecognized selection. Syntax: RECEIVE [number].");
+		return;
+	}
   for (struct shop_order_data *order = shop_table[shop_nr].order; order; order = order->next)
     if (order->player == GET_IDNUM(ch) && order->timeavail < time(0) && !--number)
     {
@@ -1219,7 +1250,7 @@ void list_detailed_shop(struct char_data *ch, vnum_t shop_nr)
   sprintf(ENDOF(buf), "Buy at:     [%1.2f], Sell at: [%1.2f], \xC2\xB1 %%: [%d], Current %%: [%d], Hours [%d-%d]\r\n",
           shop_table[shop_nr].profit_buy, shop_table[shop_nr].profit_sell, shop_table[shop_nr].random_amount,
           shop_table[shop_nr].random_current, shop_table[shop_nr].open, shop_table[shop_nr].close);
-  sprintf(ENDOF(buf), "Type:       %s, Ettiquette: %s\r\n", shop_type[shop_table[shop_nr].type], skills[shop_table[shop_nr].ettiquete].name);
+  sprintf(ENDOF(buf), "Type:       %s, Etiquette: %s\r\n", shop_type[shop_table[shop_nr].type], skills[shop_table[shop_nr].ettiquete].name);
   shop_table[shop_nr].races.PrintBits(buf2, MAX_STRING_LENGTH, pc_race_types, NUM_RACES);
   sprintf(ENDOF(buf), "!Serves:     %s\r\n", buf2);
   shop_table[shop_nr].flags.PrintBits(buf2, MAX_STRING_LENGTH, shop_flags, SHOP_FLAGS);
@@ -1528,7 +1559,7 @@ void shedit_parse(struct descriptor_data *d, const char *arg)
                    "3) Street Etiquette\r\n"
                    "4) Tribal Etiquette\r\n"
                    "5) Elf Etiquette\r\n"
-                   "Enter Etiquette skill required for availibility tests: ");
+                   "Enter Etiquette skill required for availability tests: ");
       d->edit_mode = SHEDIT_ETTI;
       break;
     case '8':
@@ -1762,7 +1793,7 @@ void shedit_parse(struct descriptor_data *d, const char *arg)
       sell->stock = 0;
       SHOP->selling = sell;
       CLS(CH);
-      send_to_char("0) Always\r\n1) Availibility Code\r\n2) Limited Stock\r\nEnter Supply Type: ", CH);
+      send_to_char("0) Always\r\n1) Availability Code\r\n2) Limited Stock\r\nEnter Supply Type: ", CH);
       d->edit_mode = SHEDIT_SELL_ADD1;
     } else
       send_to_char("Invalid VNum! What Item VNum: ", CH);
